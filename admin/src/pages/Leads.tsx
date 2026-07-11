@@ -69,7 +69,7 @@ export function LeadsPage() {
         <div className="flex flex-col gap-3">
           {leads.map((lead, i) => (
             <button key={lead.id} onClick={() => openLead(lead)}
-              className={`anim-rise-${Math.min(i, 3)} group cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 text-left transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-600/8 ${!lead.billable ? 'opacity-60' : ''}`}>
+              className={`anim-rise-${Math.min(i, 3)} group cursor-pointer rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-600/8 ${!lead.billable ? 'opacity-60' : ''}`}>
               <div className="flex items-center gap-4">
                 <ScoreRing score={lead.score} />
                 <div className="min-w-0 flex-1">

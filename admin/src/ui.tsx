@@ -14,9 +14,9 @@ export function Button({ children, onClick, disabled, variant = 'primary', type 
 }) {
   const base = 'inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-[.98]';
   const variants = {
-    primary: 'bg-gradient-to-br from-brand-600 to-violet-600 text-white shadow-lg shadow-brand-600/25 hover:shadow-xl hover:shadow-brand-600/30 hover:-translate-y-px',
+    primary: 'btn-shine bg-gradient-to-br from-brand-600 via-violet-600 to-fuchsia-600 text-white shadow-lg shadow-brand-600/30 hover:shadow-xl hover:shadow-brand-600/40 hover:-translate-y-px',
     ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-    outline: 'border border-slate-300 text-slate-700 bg-white hover:border-brand-400 hover:text-brand-700',
+    outline: 'border border-slate-300 text-slate-700 bg-white/80 backdrop-blur hover:border-brand-400 hover:text-brand-700',
     danger: 'bg-red-50 text-red-600 hover:bg-red-100',
   };
   return (

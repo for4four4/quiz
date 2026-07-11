@@ -244,9 +244,11 @@ function QuestionScreen({ entry, index, total, onAnswer, onBack }: {
 
       {q.type === 'single' && (
         <div class="kv-opts">
-          {q.options.map((opt) => (
+          {q.options.map((opt, i) => (
             <button key={opt} class={`kv-opt${picked === opt ? ' on' : ''}`} onClick={() => pickSingle(opt)}>
-              <span class="kv-dot" />{opt}
+              <span class="kv-key">{String.fromCharCode(65 + i)}</span>
+              {opt}
+              <span class="kv-check"><IconCheck /></span>
             </button>
           ))}
         </div>
@@ -255,7 +257,7 @@ function QuestionScreen({ entry, index, total, onAnswer, onBack }: {
       {q.type === 'multi' && (
         <>
           <div class="kv-opts">
-            {q.options.map((opt) => {
+            {q.options.map((opt, i) => {
               const on = multi.includes(opt);
               return (
                 <button
@@ -263,7 +265,9 @@ function QuestionScreen({ entry, index, total, onAnswer, onBack }: {
                   class={`kv-opt kv-multi${on ? ' on' : ''}`}
                   onClick={() => setMulti(on ? multi.filter((o) => o !== opt) : [...multi, opt])}
                 >
-                  <span class="kv-dot" />{opt}
+                  <span class="kv-key">{String.fromCharCode(65 + i)}</span>
+                  {opt}
+                  <span class="kv-check"><IconCheck /></span>
                 </button>
               );
             })}

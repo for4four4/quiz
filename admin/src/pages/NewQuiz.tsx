@@ -56,7 +56,7 @@ export function NewQuizPage() {
   if (busy) {
     return (
       <div className="mx-auto flex max-w-lg flex-col items-center justify-center py-24 text-center">
-        <div className="anim-rise mb-8 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-brand-600 to-violet-600 text-4xl shadow-2xl shadow-brand-600/30">
+        <div className="anim-rise ring-pulse mb-8 grid h-24 w-24 place-items-center rounded-[28px] bg-gradient-to-br from-brand-600 via-violet-600 to-fuchsia-600 text-5xl shadow-2xl shadow-brand-600/40">
           🧠
         </div>
         <ThinkingDots />
@@ -71,7 +71,7 @@ export function NewQuizPage() {
     const { generated, quizId } = preview;
     return (
       <div className="mx-auto max-w-2xl">
-        <div className="anim-rise mb-6 rounded-2xl bg-gradient-to-br from-brand-600 to-violet-600 p-6 text-white shadow-xl shadow-brand-600/20">
+        <div className="hero-gradient anim-rise mb-6 rounded-3xl p-6 text-white shadow-2xl shadow-brand-900/25 sm:p-7">
           <div className="mb-1 text-xs font-bold uppercase tracking-widest text-white/60">Квиз готов ✨</div>
           <h1 className="text-xl font-extrabold sm:text-2xl">{generated.quiz_title}</h1>
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
@@ -82,7 +82,7 @@ export function NewQuizPage() {
 
         <div className="flex flex-col gap-3">
           {generated.questions.map((q, i) => (
-            <div key={i} className={`anim-rise-${Math.min(i, 3)} rounded-2xl border border-slate-200 bg-white p-5`}>
+            <div key={i} className={`anim-rise-${Math.min(i, 3)} rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-5`}>
               <div className="mb-2 flex items-center gap-2.5">
                 <span className="grid h-7 w-7 flex-none place-items-center rounded-lg bg-brand-50 text-xs font-extrabold text-brand-700">{i + 1}</span>
                 <h3 className="font-extrabold leading-snug">{q.title}</h3>
@@ -109,7 +109,7 @@ export function NewQuizPage() {
           </div>
         </div>
 
-        <div className="sticky bottom-4 mt-6 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-xl backdrop-blur sm:flex-row">
+        <div className="sticky bottom-4 mt-6 flex flex-col gap-3 rounded-3xl bg-white/90 p-4 shadow-xl ring-1 ring-slate-900/5 backdrop-blur sm:flex-row">
           <Button className="flex-1" onClick={() => navigate(`/quizzes/${quizId}`)}>
             Открыть в редакторе →
           </Button>
@@ -131,7 +131,7 @@ export function NewQuizPage() {
         </p>
       </div>
 
-      <form onSubmit={generate} className="anim-rise-1 flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <form onSubmit={generate} className="anim-rise-1 glass flex flex-col gap-5 rounded-3xl p-6 shadow-xl shadow-brand-900/5 ring-1 ring-slate-900/5 sm:p-7">
         <Field label="Опишите ваш бизнес и что вы продаёте" hint="Ниша, средний чек, сроки, что важно клиентам — всё, что придёт в голову">
           <textarea
             className={`${inputCls} min-h-32 resize-y`}

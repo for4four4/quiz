@@ -79,10 +79,14 @@ export function QuizEditorPage() {
       </div>
 
       {/* Табы */}
-      <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 text-sm font-bold">
+      <div className="glass mb-6 flex gap-1 overflow-x-auto rounded-2xl p-1.5 text-sm font-bold ring-1 ring-slate-900/5">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`shrink-0 cursor-pointer rounded-lg px-4 py-2 transition-all ${tab === t.id ? 'bg-white text-slate-900 shadow' : 'text-slate-500 hover:text-slate-800'}`}>
+            className={`shrink-0 cursor-pointer rounded-xl px-4 py-2 transition-all ${
+              tab === t.id
+                ? 'bg-gradient-to-br from-brand-600 to-violet-600 text-white shadow-lg shadow-brand-600/30'
+                : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'
+            }`}>
             {t.label}
           </button>
         ))}
@@ -116,7 +120,7 @@ function QuestionsTab({ quiz, onSwitchMode }: { quiz: QuizFull; onSwitchMode: (m
       </div>
 
       {quiz.questions.map((q, i) => (
-        <div key={q.id} className={`anim-rise-${Math.min(i, 3)} rounded-2xl border border-slate-200 bg-white p-5`}>
+        <div key={q.id} className={`anim-rise-${Math.min(i, 3)} rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-5`}>
           <div className="mb-2 flex items-center gap-2.5">
             <span className="grid h-7 w-7 flex-none place-items-center rounded-lg bg-brand-50 text-xs font-extrabold text-brand-700">{i + 1}</span>
             <h3 className="font-extrabold leading-snug">{q.title}</h3>
@@ -145,7 +149,7 @@ function BriefTab({ quiz, saving, onSave }: {
   const [goalsText, setGoalsText] = useState((quiz.business_context.qualification_goals ?? []).join('\n'));
 
   return (
-    <div className="anim-rise flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6">
+    <div className="anim-rise flex flex-col gap-5 rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-6">
       <p className="-mb-1 text-sm text-slate-500">
         В адаптивном режиме ИИ опирается на этот бриф: он определяет, какие вопросы задавать и как оценивать лиды.
       </p>
@@ -193,7 +197,7 @@ function SettingsTab({ quiz, saving, onSave }: {
   };
 
   return (
-    <div className="anim-rise flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6">
+    <div className="anim-rise flex flex-col gap-5 rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-6">
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Максимум вопросов">
           <input className={inputCls} type="number" min={1} max={15} value={s.max_questions ?? 7}
@@ -294,7 +298,7 @@ function PublishTab({ quiz, onSlug }: { quiz: QuizFull; onSlug: (slug: string) =
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <div className="rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-6">
         <h3 className="mb-4 font-extrabold">Прямая ссылка и QR</h3>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
           <div className="min-w-0 flex-1">
@@ -320,7 +324,7 @@ function PublishTab({ quiz, onSlug }: { quiz: QuizFull; onSlug: (slug: string) =
         </div>
       </div>
 
-      <div className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6">
+      <div className="flex flex-col gap-5 rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 p-6">
         <h3 className="font-extrabold">Код для вставки на сайт</h3>
         <CopyBlock label="Встроенный блок" code={embed.inline} />
         <CopyBlock label="Попап с плавающей кнопкой" code={embed.popup} />
