@@ -1,0 +1,126 @@
+import { one, q, pool } from './db.js';
+import { scoreLead } from './services/ai.js';
+import { runFraudChecks } from './services/antifraud.js';
+
+/**
+ * Простой воркер очереди jobs (таблица в Postgres — по спеке на MVP хватит).
+ * Запуск: npm run worker. Берёт задачи через FOR UPDATE SKIP LOCKED,
+ * до 3 попыток с экспоненциальной паузой.
+ */
+
+const POLL_MS = 1500;
+const MAX_ATTEMPTS = 3;
+
+interface Job { id: number; type: string; payload: Record<string, unknown>; attempts: number }
+
+async function claimJob(): Promise<Job | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const res = await client.query<Job>(
+      `SELECT id, type, payload, attempts FROM jobs
+       WHERE status = 'pending' AND run_after <= now()
+       ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`,
+    );
+    const job = res.rows[0];
+    if (job) {
+      await client.query(`UPDATE jobs SET status = 'running', attempts = attempts + 1 WHERE id = $1`, [job.id]);
+    }
+    await client.query('COMMIT');
+    return job ?? null;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function handleScoreLead(payload: Record<string, unknown>) {
+  const leadId = String(payload.leadId);
+
+  const lead = await one<{
+    id: string; session_id: string; quiz_id: string;
+    name: string | null; phone: string | null; email: string | null;
+  }>('SELECT id, session_id, quiz_id, name, phone, email FROM leads WHERE id = $1', [leadId]);
+  if (!lead) throw new Error(`Лид ${leadId} не найден`);
+
+  const session = await one<{
+    transcript: { q?: string; a?: unknown }[];
+    started_at: string; finished_at: string | null; ip: string | null;
+  }>('SELECT transcript, started_at, finished_at, ip FROM sessions WHERE id = $1', [lead.session_id]);
+  const quiz = await one<{ business_context: Record<string, unknown> }>(
+    'SELECT business_context FROM quizzes WHERE id = $1', [lead.quiz_id]);
+  if (!session || !quiz) throw new Error('Сессия или квиз не найдены');
+
+  // 1. Дешёвые программные проверки
+  const dup = await one<{ n: string }>(
+    `SELECT count(*) AS n FROM leads l JOIN sessions s ON s.id = l.session_id
+     WHERE s.ip = $1 AND l.created_at > now() - interval '24 hours' AND l.id <> $2`,
+    [session.ip, lead.id],
+  );
+  const fraudFlags = runFraudChecks({
+    phone: lead.phone,
+    email: lead.email,
+    startedAt: new Date(session.started_at),
+    finishedAt: new Date(session.finished_at ?? Date.now()),
+    transcript: session.transcript,
+    duplicateIpCount: Number(dup?.n ?? 0),
+  });
+
+  // 2. LLM-скоринг (промпт 3) с флагами как доп. контекстом
+  const result = await scoreLead({
+    business_context: quiz.business_context,
+    ideal_lead: String(quiz.business_context.ideal_lead ?? ''),
+    transcript: session.transcript,
+    name: lead.name,
+    phone: lead.phone,
+    email: lead.email,
+    fraud_flags: fraudFlags,
+  });
+
+  // 3. junk не тарифицируется (billable = false) — ядро честного антифрода
+  await q(
+    `UPDATE leads SET score = $2, segment = $3, summary = $4, first_line = $5,
+            fraud_flags = $6, billable = $7 WHERE id = $1`,
+    [lead.id, result.score, result.segment, result.summary, result.first_line,
+     JSON.stringify([...fraudFlags, ...result.junk_reasons]), result.segment !== 'junk'],
+  );
+
+  // TODO неделя 3: уведомление в Telegram для segment === 'hot'
+}
+
+async function processJob(job: Job) {
+  try {
+    if (job.type === 'score_lead') await handleScoreLead(job.payload);
+    else throw new Error(`Неизвестный тип задачи: ${job.type}`);
+    await q(`UPDATE jobs SET status = 'done', finished_at = now() WHERE id = $1`, [job.id]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const failed = job.attempts >= MAX_ATTEMPTS;
+    await q(
+      `UPDATE jobs SET status = $2, error = $3,
+              run_after = now() + make_interval(secs => $4),
+              finished_at = CASE WHEN $2 = 'failed' THEN now() ELSE NULL END
+       WHERE id = $1`,
+      [job.id, failed ? 'failed' : 'pending', message, 30 * job.attempts],
+    );
+    console.error(`Задача ${job.id} (${job.type}) — ошибка: ${message}${failed ? ' [failed]' : ' [retry]'}`);
+  }
+}
+
+async function loop() {
+  console.log('Воркер запущен, опрашиваю очередь jobs…');
+  for (;;) {
+    try {
+      const job = await claimJob();
+      if (job) await processJob(job);
+      else await new Promise((r) => setTimeout(r, POLL_MS));
+    } catch (err) {
+      console.error('Ошибка воркера:', err);
+      await new Promise((r) => setTimeout(r, POLL_MS * 2));
+    }
+  }
+}
+
+loop();
