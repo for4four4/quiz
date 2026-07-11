@@ -8,7 +8,8 @@ SaaS: владелец бизнеса описывает свой бизнес �
 - **БД** — PostgreSQL 16, миграции — голые SQL в `db/migrations/`, раннер `npm run migrate`
 - **LLM** — агрегатор Polza.ai (OpenAI-совместимый API, https://polza.ai/docs): `fetch` на `{POLZA_BASE_URL}/chat/completions`, структурный вывод `response_format: json_schema (strict)` + плагин `response-healing`. Весь LLM-код — только через `api/src/llm/client.ts` (абстракция провайдера, не размазывать fetch по коду)
 - **Очередь** — таблица `jobs` в Postgres + воркер `api/src/worker.ts` (FOR UPDATE SKIP LOCKED)
-- Планируются: **widget/** — Preact, бандл < 50 КБ, подключение одним `<script>`; **admin/** — React + Vite + Tailwind
+- **widget/** — Preact + Vite (lib-режим, IIFE), Shadow DOM для изоляции стилей, бандл ~38 КБ (< 50 КБ — жёсткий лимит). Темизация через CSS-переменные из `quizzes.design`
+- **admin/** — React 18 + Vite + Tailwind CSS 4 (`@tailwindcss/vite`), react-router (BrowserRouter), токен в localStorage, dev-прокси `/api` → :8080
 
 ## Команды
 ```bash
@@ -18,6 +19,8 @@ npm run migrate             # применить db/migrations/*.sql
 npm run dev                 # API на :8080 (tsx watch)
 npm run worker              # воркер скоринга (отдельный процесс)
 npm run build               # tsc → dist/
+cd widget && npm run build  # dist/kvalify-widget.js (IIFE); npm run typecheck
+cd admin && npm run dev     # админка на :5173 (прокси /api → :8080); npm run build = tsc + vite
 ```
 Нужен `api/.env` (см. `api/.env.example`); без валидного `POLZA_API_KEY` ИИ-эндпоинты вернут ошибку, остальное работает.
 
@@ -31,16 +34,17 @@ npm run build               # tsc → dist/
 7. ID моделей — только через env (`LLM_MODEL_FAST`/`LLM_MODEL_SMART`), формат `провайдер/модель` по каталогу polza.ai/models.
 8. Тексты для пользователей (ошибки API, UI) — на русском.
 
-## Состояние (спринт 1 сделан)
+## Состояние (спринты 1–2 сделаны)
 - [x] Схема БД, миграции, auth (JWT), CRUD квизов
 - [x] LLM-модуль под Polza.ai, промпты 1–4 со structured output
 - [x] Онбординг «создать квиз с ИИ» (`POST /api/quizzes/generate`)
-- [x] Публичный поток виджета: `/start → /answer → /lead → /result` (static + adaptive с фолбэком)
+- [x] Публичный поток виджета: `/start → /answer → /lead → /result` (static + adaptive с фолбэком); `GET /api/w/:id` — мета для обложки; `step` в `/answer` — поддержка «назад» (усечение транскрипта); `GET /q/:idOrSlug` — hosted-страница квиза
 - [x] Программный антифрод + фоновый скоринг лидов (воркер)
+- [x] **widget/** — обложка, один вопрос на экран, прогресс, «назад», «печатающаяся» пауза, маска +7, чекбокс 152-ФЗ, конфетти, режимы inline/popup/button, Shadow DOM, ~38 КБ
+- [x] **admin/** — auth, онбординг-бриф с анимацией генерации, список квизов, редактор (вопросы/бриф/настройки/публикация), embed-коды + ссылка + QR, лиды с бейджами и транскриптом. Мобильная вёрстка проверена скриншотами (390×844)
 
 ## Дальше (в порядке приоритета, из плана по неделям спеки)
-1. **widget/** — Preact-виджет: один вопрос на экран, прогресс-бар, «назад», «печатающаяся» пауза в адаптивном режиме, маска телефона, чекбокс согласия 152-ФЗ, режимы попап/встроенный/кнопка, бандл < 50 КБ
-2. **admin/** — React SPA: регистрация/логин, онбординг-бриф, список квизов, редактор (вопросы + бриф для adaptive), экран «Лиды» с бейджами скоринга и транскриптом, публикация (embed-код, ссылка, QR)
-3. Telegram-уведомления о hot-лидах (интеграция из недели 3)
-4. Аналитика: воронка по вопросам из таблицы `events`
-5. ЮKassa (подписки), тарифные лимиты
+1. Telegram-уведомления о hot-лидах (интеграция из недели 3)
+2. Аналитика: воронка по вопросам из таблицы `events` + ИИ-аналитик (промпт 5)
+3. ЮKassa (подписки), тарифные лимиты
+4. Редактирование вопросов скелета в админке (нужен API `PUT /api/quizzes/:id/questions`), drag&drop, дизайн-темы виджета

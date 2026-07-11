@@ -54,6 +54,59 @@ async function skeletonQuestion(quizId: string, position: number) {
 }
 
 export async function publicRoutes(app: FastifyInstance) {
+  // Отдельная страница квиза (для прямой ссылки и QR-кода из админки).
+  // Виджет-бандл раздаёт nginx по /widget/kvalify-widget.js (см. README).
+  app.get('/q/:quizId', async (req, reply) => {
+    const { quizId } = req.params as { quizId: string };
+    const quiz = await one<{ id: string; title: string }>(
+      `SELECT id, title FROM quizzes WHERE (id::text = $1 OR slug = $1) AND status = 'published'`,
+      [quizId],
+    );
+    if (!quiz) return reply.code(404).type('text/html; charset=utf-8')
+      .send('<!doctype html><meta charset="utf-8"><title>Квиз не найден</title><p style="font-family:sans-serif;text-align:center;margin-top:20vh">Квиз не найден или не опубликован</p>');
+
+    return reply.type('text/html; charset=utf-8').send(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${quiz.title.replace(/</g, '&lt;')}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+           background: linear-gradient(160deg, #eef2ff 0%, #faf5ff 60%, #f0f9ff 100%); padding: 24px 12px; box-sizing: border-box; }
+    #kv { width: 100%; max-width: 560px; }
+  </style>
+</head>
+<body>
+  <div id="kv"></div>
+  <script src="/widget/kvalify-widget.js" data-quiz-id="${quiz.id}" data-mode="inline" data-target="#kv" defer></script>
+</body>
+</html>`);
+  });
+
+  // Мета квиза для обложки виджета: заголовок и тема до старта сессии
+  app.get('/api/w/:quizId', async (req, reply) => {
+    const { quizId } = req.params as { quizId: string };
+    const quiz = await loadPublishedQuiz(quizId);
+    if (!quiz) return reply.code(404).send({ error: 'Квиз не найден или не опубликован' });
+
+    await q(`INSERT INTO events(quiz_id, type) VALUES ($1, 'view')`, [quiz.id]);
+    const count = await one<{ n: string }>(
+      'SELECT count(*) AS n FROM questions WHERE quiz_id = $1', [quiz.id]);
+    return {
+      title: quiz.title,
+      design: quiz.design,
+      settings: {
+        max_questions: quiz.settings.max_questions ?? 7,
+        contact_fields: quiz.settings.contact_fields ?? ['name', 'phone'],
+        offer_page: quiz.settings.offer_page ?? null,
+        cta_text: quiz.settings.cta_text ?? null,
+        redirect_url: quiz.settings.redirect_url ?? null,
+      },
+      questionsCount: Number(count?.n ?? 0),
+    };
+  });
+
   // Старт сессии: отдаём первый вопрос
   app.post('/api/w/:quizId/start', async (req, reply) => {
     const { quizId } = req.params as { quizId: string };
@@ -84,13 +137,17 @@ export async function publicRoutes(app: FastifyInstance) {
     sessionId: z.string().uuid(),
     question: z.string().min(1),
     answer: z.union([z.string(), z.array(z.string()), z.number()]),
+    // Индекс вопроса, на который отвечают. Кнопка «назад» переотправляет ответ
+    // с прежним индексом — хвост транскрипта усекается, чтобы исправленный ответ
+    // не дублировался и позиции static-режима не съезжали.
+    step: z.number().int().min(0).optional(),
   });
 
   app.post('/api/w/:quizId/answer', async (req, reply) => {
     const { quizId } = req.params as { quizId: string };
     const parsed = answerSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Неверный формат ответа' });
-    const { sessionId, question, answer } = parsed.data;
+    const { sessionId, question, answer, step: stepIndex } = parsed.data;
 
     const quiz = await loadPublishedQuiz(quizId);
     const session = await one<SessionRow>(
@@ -100,8 +157,11 @@ export async function publicRoutes(app: FastifyInstance) {
     );
     if (!quiz || !session) return reply.code(404).send({ error: 'Сессия не найдена' });
 
+    const base = typeof stepIndex === 'number'
+      ? session.transcript.slice(0, stepIndex)
+      : session.transcript;
     const transcript = [
-      ...session.transcript,
+      ...base,
       { q: question, a: answer, generated_by: quiz.mode, ts: new Date().toISOString() },
     ];
     const askedCount = transcript.length;
