@@ -1,6 +1,7 @@
 import { one, q, pool } from './db.js';
 import { scoreLead } from './services/ai.js';
 import { runFraudChecks } from './services/antifraud.js';
+import { formatLeadMessage, sendTelegramMessage, type TelegramConfig } from './services/telegram.js';
 
 /**
  * Простой воркер очереди jobs (таблица в Postgres — по спеке на MVP хватит).
@@ -40,17 +41,17 @@ async function handleScoreLead(payload: Record<string, unknown>) {
   const leadId = String(payload.leadId);
 
   const lead = await one<{
-    id: string; session_id: string; quiz_id: string;
+    id: string; session_id: string; quiz_id: string; workspace_id: string;
     name: string | null; phone: string | null; email: string | null;
-  }>('SELECT id, session_id, quiz_id, name, phone, email FROM leads WHERE id = $1', [leadId]);
+  }>('SELECT id, session_id, quiz_id, workspace_id, name, phone, email FROM leads WHERE id = $1', [leadId]);
   if (!lead) throw new Error(`Лид ${leadId} не найден`);
 
   const session = await one<{
     transcript: { q?: string; a?: unknown }[];
     started_at: string; finished_at: string | null; ip: string | null;
   }>('SELECT transcript, started_at, finished_at, ip FROM sessions WHERE id = $1', [lead.session_id]);
-  const quiz = await one<{ business_context: Record<string, unknown> }>(
-    'SELECT business_context FROM quizzes WHERE id = $1', [lead.quiz_id]);
+  const quiz = await one<{ business_context: Record<string, unknown>; title: string }>(
+    'SELECT business_context, title FROM quizzes WHERE id = $1', [lead.quiz_id]);
   if (!session || !quiz) throw new Error('Сессия или квиз не найдены');
 
   // 1. Дешёвые программные проверки
@@ -87,7 +88,35 @@ async function handleScoreLead(payload: Record<string, unknown>) {
      JSON.stringify([...fraudFlags, ...result.junk_reasons]), result.segment !== 'junk'],
   );
 
-  // TODO неделя 3: уведомление в Telegram для segment === 'hot'
+  // 4. Уведомление в Telegram (неделя 3). Не роняем задачу, если бот недоступен —
+  //    скоринг уже сохранён; ошибку логируем и идём дальше.
+  try {
+    await notifyLead(lead.workspace_id, lead.id, {
+      quizTitle: quiz.title, name: lead.name, phone: lead.phone, email: lead.email,
+      score: result.score, segment: result.segment, summary: result.summary, first_line: result.first_line,
+    });
+  } catch (err) {
+    console.error(`Уведомление по лиду ${lead.id} не отправлено:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Шлём лид в Telegram, если у воркспейса настроена интеграция и сегмент подходит. */
+async function notifyLead(workspaceId: string, leadId: string, lead: Parameters<typeof formatLeadMessage>[0] & { segment: string | null }) {
+  const integ = await one<{ config: TelegramConfig }>(
+    `SELECT config FROM integrations WHERE workspace_id = $1 AND type = 'telegram' AND enabled = true`,
+    [workspaceId],
+  );
+  if (!integ?.config?.bot_token || !integ.config.chat_id) return;
+
+  const segments = integ.config.notify_segments?.length ? integ.config.notify_segments : ['hot'];
+  if (!lead.segment || !segments.includes(lead.segment)) return;
+
+  // Защита от повторной отправки при ретрае задачи: помечаем только после успеха.
+  const already = await one<{ notified_at: string | null }>('SELECT notified_at FROM leads WHERE id = $1', [leadId]);
+  if (already?.notified_at) return;
+
+  await sendTelegramMessage(integ.config, formatLeadMessage(lead));
+  await q('UPDATE leads SET notified_at = now() WHERE id = $1', [leadId]);
 }
 
 async function processJob(job: Job) {

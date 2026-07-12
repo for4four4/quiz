@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { authRoutes } from './routes/auth.js';
 import { quizRoutes } from './routes/quizzes.js';
 import { publicRoutes } from './routes/public.js';
+import { integrationRoutes } from './routes/integrations.js';
 
 const app = Fastify({ logger: true, trustProxy: true });
 
@@ -18,6 +19,7 @@ app.get('/api/health', async () => ({ ok: true }));
 
 await app.register(authRoutes);
 await app.register(quizRoutes);
+await app.register(integrationRoutes);
 await app.register(publicRoutes);
 
 app.listen({ port: config.port, host: '0.0.0.0' })

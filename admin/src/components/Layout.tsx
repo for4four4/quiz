@@ -16,6 +16,7 @@ function NavItems({ leadCount, onClick }: { leadCount: number; onClick?: () => v
   const items = [
     { to: '/', label: 'Мои квизы', icon: icons.grid, end: true, badge: 0 },
     { to: '/leads', label: 'Лиды', icon: icons.inbox, end: false, badge: leadCount },
+    { to: '/integrations', label: 'Интеграции', icon: icons.plug, end: false, badge: 0 },
   ];
   return (
     <>

@@ -3,6 +3,7 @@ import { getToken } from './api';
 import { Layout } from './components/Layout';
 import { AuthPage } from './pages/Auth';
 import { DashboardPage } from './pages/Dashboard';
+import { IntegrationsPage } from './pages/Integrations';
 import { LeadsPage } from './pages/Leads';
 import { NewQuizPage } from './pages/NewQuiz';
 import { QuizEditorPage } from './pages/QuizEditor';
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/quizzes/:id" element={<QuizEditorPage />} />
             <Route path="/leads" element={<LeadsPage />} />
+            <Route path="/integrations" element={<IntegrationsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
