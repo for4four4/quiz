@@ -54,6 +54,22 @@ export interface QuizFull extends QuizListItem {
   questions: Question[];
 }
 
+export interface Analytics {
+  window_days: number;
+  totals: { views: number; starts: number; leads: number };
+  conversion: number;
+  view_to_lead: number;
+  avg_score: number | null;
+  hot_leads: number;
+  funnel: { label: string; count: number; drop_rate: number }[];
+  top_utm: { source: string; sessions: number; leads: number }[];
+}
+
+export interface FunnelAnalysis {
+  insights: { finding: string; evidence: string; severity: 'high' | 'med' | 'low' }[];
+  experiments: { hypothesis: string; change: string }[];
+}
+
 export type Segment = 'hot' | 'warm' | 'cold' | 'junk';
 
 export interface Lead {

@@ -1,4 +1,4 @@
-import type { GeneratedQuiz, Lead, QuizFull, QuizListItem, TranscriptItem } from './types';
+import type { Analytics, FunnelAnalysis, GeneratedQuiz, Lead, QuizFull, QuizListItem, TranscriptItem } from './types';
 
 const TOKEN_KEY = 'kvalify_token';
 
@@ -60,6 +60,11 @@ export const api = {
   },
   transcript: (leadId: string) =>
     request<{ transcript: TranscriptItem[] }>(`/api/leads/${leadId}/transcript`),
+
+  analytics: (quizId: string, days = 30) =>
+    request<Analytics>(`/api/quizzes/${quizId}/analytics?days=${days}`),
+  analyze: (quizId: string) =>
+    request<FunnelAnalysis>(`/api/quizzes/${quizId}/analyze`, { method: 'POST' }),
 
   integrations: () => request<IntegrationInfo[]>('/api/integrations'),
   saveIntegration: (type: string, body: Record<string, unknown>) =>

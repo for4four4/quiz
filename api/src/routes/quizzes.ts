@@ -134,4 +134,115 @@ export async function quizRoutes(app: FastifyInstance) {
     if (!row) return reply.code(404).send({ error: 'Лид не найден' });
     return row;
   });
+
+  // Убедиться, что квиз принадлежит воркспейсу (для аналитики)
+  async function ownQuiz(req: FastifyRequest, id: string) {
+    return one<{ id: string; title: string; business_context: Record<string, unknown> }>(
+      'SELECT id, title, business_context FROM quizzes WHERE id = $1 AND workspace_id = $2', [id, ws(req)]);
+  }
+
+  // Воронка по вопросам из таблицы events + конверсия, средний скоринг, топ UTM
+  app.get('/api/quizzes/:id/analytics', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { days } = req.query as { days?: string };
+    const quiz = await ownQuiz(req, id);
+    if (!quiz) return reply.code(404).send({ error: 'Квиз не найден' });
+    const window = Math.min(Math.max(Number(days) || 30, 1), 365);
+    const since = `now() - make_interval(days => ${window})`;
+
+    // Итоги по типам событий
+    const totals = await q<{ type: string; n: string }>(
+      `SELECT type, count(*) AS n FROM events WHERE quiz_id = $1 AND ts > ${since} GROUP BY type`, [id]);
+    const totalOf = (t: string) => Number(totals.find((r) => r.type === t)?.n ?? 0);
+    const views = totalOf('view'), starts = totalOf('start'), leads = totalOf('lead');
+
+    // Ответы по шагам (payload.step = порядковый номер отвеченного вопроса)
+    const steps = await q<{ step: number; n: string }>(
+      `SELECT (payload->>'step')::int AS step, count(*) AS n
+       FROM events WHERE quiz_id = $1 AND type = 'answer' AND ts > ${since}
+       GROUP BY 1 ORDER BY 1`, [id]);
+
+    // Названия вопросов-скелета для подписи шагов
+    const questions = await q<{ position: number; title: string }>(
+      'SELECT position, title FROM questions WHERE quiz_id = $1 ORDER BY position', [id]);
+    const titleAt = (pos: number) => questions.find((x) => x.position === pos)?.title ?? `Шаг ${pos + 1}`;
+
+    // Воронка: Просмотры → Старт → каждый шаг → Заявка
+    const funnel: { label: string; count: number }[] = [
+      { label: 'Просмотры', count: views },
+      { label: 'Начали квиз', count: starts },
+    ];
+    const maxStep = steps.reduce((m, s) => Math.max(m, s.step), 0);
+    for (let st = 1; st <= maxStep; st++) {
+      const n = Number(steps.find((s) => s.step === st)?.n ?? 0);
+      funnel.push({ label: titleAt(st - 1), count: n });
+    }
+    funnel.push({ label: 'Оставили заявку', count: leads });
+    // drop_rate относительно предыдущего шага
+    const funnelWithDrop = funnel.map((f, i) => ({
+      ...f,
+      drop_rate: i === 0 || funnel[i - 1].count === 0 ? 0
+        : Math.round((1 - f.count / funnel[i - 1].count) * 100),
+    }));
+
+    const scoreRow = await one<{ avg: string | null; hot: string; total: string }>(
+      `SELECT round(avg(score))::text AS avg,
+              count(*) FILTER (WHERE segment = 'hot') AS hot,
+              count(*) FILTER (WHERE billable) AS total
+       FROM leads WHERE quiz_id = $1 AND created_at > ${since}`, [id]);
+
+    const utm = await q<{ source: string; n: string; leads: string }>(
+      `SELECT COALESCE(NULLIF(s.utm->>'utm_source', ''), 'прямой заход') AS source,
+              count(*) AS n,
+              count(*) FILTER (WHERE l.id IS NOT NULL) AS leads
+       FROM sessions s LEFT JOIN leads l ON l.session_id = s.id
+       WHERE s.quiz_id = $1 AND s.started_at > ${since}
+       GROUP BY 1 ORDER BY 2 DESC LIMIT 5`, [id]);
+
+    return {
+      window_days: window,
+      totals: { views, starts, leads },
+      conversion: starts ? Math.round((leads / starts) * 100) : 0,
+      view_to_lead: views ? Math.round((leads / views) * 100) : 0,
+      avg_score: scoreRow?.avg ? Number(scoreRow.avg) : null,
+      hot_leads: Number(scoreRow?.hot ?? 0),
+      funnel: funnelWithDrop,
+      top_utm: utm.map((u) => ({ source: u.source, sessions: Number(u.n), leads: Number(u.leads) })),
+    };
+  });
+
+  // ИИ-аналитик воронки (промпт 5) — по кнопке
+  app.post('/api/quizzes/:id/analyze', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const quiz = await ownQuiz(req, id);
+    if (!quiz) return reply.code(404).send({ error: 'Квиз не найден' });
+
+    // Свежая статистика воронки для передачи модели
+    const analytics = await app.inject({
+      method: 'GET', url: `/api/quizzes/${id}/analytics`,
+      headers: { authorization: req.headers.authorization ?? '' },
+    }).then((r) => r.json());
+
+    const questions = await q<{ title: string; branch_rules: { why?: string } }>(
+      'SELECT title, branch_rules FROM questions WHERE quiz_id = $1 ORDER BY position', [id]);
+    const samples = await q<{ transcript: unknown }>(
+      `SELECT s.transcript FROM sessions s
+       WHERE s.quiz_id = $1 AND jsonb_array_length(s.transcript) > 0
+       ORDER BY s.started_at DESC LIMIT 10`, [id]);
+
+    const { analyzeFunnel } = await import('../services/ai.js');
+    const analysis = await analyzeFunnel({
+      quiz_snapshot: {
+        title: quiz.title,
+        qualification_goals: quiz.business_context.qualification_goals ?? [],
+        questions: questions.map((x) => ({ title: x.title, why: x.branch_rules?.why })),
+      },
+      funnel_stats: {
+        funnel: analytics.funnel, conversion: analytics.conversion,
+        avg_score: analytics.avg_score, top_utm: analytics.top_utm,
+      },
+      sample_transcripts: samples.map((s) => s.transcript),
+    });
+    return analysis;
+  });
 }

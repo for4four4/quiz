@@ -4,13 +4,15 @@ import QRCode from 'qrcode';
 import { api, ApiError } from '../api';
 import type { CardStyle, QuizDesign, QuizFull } from '../types';
 import { WidgetPreview } from '../components/WidgetPreview';
+import { AnalyticsTab } from '../components/AnalyticsTab';
 import { Button, Field, Icon, icons, inputCls, Spinner, StatusChip, Toggle, useToast } from '../ui';
 
-type Tab = 'questions' | 'brief' | 'design' | 'settings' | 'publish';
+type Tab = 'questions' | 'brief' | 'design' | 'analytics' | 'settings' | 'publish';
 const tabs: { id: Tab; label: string }[] = [
   { id: 'questions', label: 'Вопросы' },
   { id: 'brief', label: 'Бриф для ИИ' },
   { id: 'design', label: 'Дизайн' },
+  { id: 'analytics', label: 'Аналитика' },
   { id: 'settings', label: 'Настройки' },
   { id: 'publish', label: 'Публикация' },
 ];
@@ -80,6 +82,7 @@ export function QuizEditorPage() {
       {tab === 'questions' && <QuestionsTab quiz={quiz} onSwitchMode={(m) => patch({ mode: m }, 'Режим переключён')} />}
       {tab === 'brief' && <BriefTab quiz={quiz} saving={saving} onSave={(bc) => patch({ business_context: bc }, 'Бриф сохранён')} />}
       {tab === 'design' && <DesignTab quiz={quiz} saving={saving} onSave={(d) => patch({ design: d }, 'Дизайн сохранён')} />}
+      {tab === 'analytics' && <AnalyticsTab quizId={quiz.id} />}
       {tab === 'settings' && <SettingsTab quiz={quiz} saving={saving} onSave={(s) => patch({ settings: s })} />}
       {tab === 'publish' && <PublishTab quiz={quiz} onSlug={(slug) => patch({ slug }, 'Ссылка обновлена')} />}
     </div>

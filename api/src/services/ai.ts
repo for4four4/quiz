@@ -4,6 +4,7 @@ import {
   adaptiveSystem, adaptiveUser, adaptiveSchema, type AdaptiveInput, type AdaptiveStep,
   scoringSystem, scoringUser, scoringSchema, type ScoringInput, type ScoringResult,
   resultSystem, resultUser, resultSchema, type ResultInput, type PersonalResult,
+  funnelSystem, funnelUser, funnelSchema, type FunnelInput, type FunnelAnalysis,
 } from '../llm/prompts.js';
 
 /** Промпт 1 — Sonnet, редактор. Главный «вау-момент» онбординга. */
@@ -35,5 +36,13 @@ export function personalResult(input: ResultInput): Promise<PersonalResult> {
   return generateJson<PersonalResult>(
     resultSystem, resultUser(input), 'personal_result', resultSchema,
     { tier: 'fast', temperature: 0.4, maxTokens: 600 },
+  );
+}
+
+/** Промпт 5 — ИИ-аналитик воронки (Sonnet, по кнопке в аналитике). */
+export function analyzeFunnel(input: FunnelInput): Promise<FunnelAnalysis> {
+  return generateJson<FunnelAnalysis>(
+    funnelSystem, funnelUser(input), 'funnel_analysis', funnelSchema,
+    { tier: 'smart', temperature: 0.3, maxTokens: 1500 },
   );
 }

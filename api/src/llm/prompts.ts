@@ -251,3 +251,63 @@ export const resultSchema = {
   required: ['headline', 'body'],
   additionalProperties: false,
 };
+
+// ---------- Промпт 5. ИИ-аналитик воронки (smart, по запросу) ----------
+
+export interface FunnelInput {
+  quiz_snapshot: unknown;      // вопросы и цели квалификации
+  funnel_stats: unknown;       // [{step, views, drop_rate}], конверсия, ср. скоринг, топ UTM
+  sample_transcripts: unknown; // 10 последних обезличенных транскриптов
+}
+
+export interface FunnelAnalysis {
+  insights: { finding: string; evidence: string; severity: 'high' | 'med' | 'low' }[];
+  experiments: { hypothesis: string; change: string }[];
+}
+
+export const funnelSystem = `Ты — CRO-аналитик. Проанализируй воронку квиза и дай рекомендации.
+
+Верни максимум 3 инсайта и 2 эксперимента. Каждый инсайт опирается на цифры
+из статистики, а не на общие слова: в поле evidence — конкретные числа из воронки
+(шаг, drop_rate, конверсия). severity — high|med|low по влиянию на конверсию.
+Каждый эксперимент — гипотеза и конкретное изменение, которое можно проверить.
+Тон — деловой, без воды, на русском.`;
+
+export function funnelUser(i: FunnelInput): string {
+  return `Квиз (вопросы и цели): ${JSON.stringify(i.quiz_snapshot)}
+Статистика за период: ${JSON.stringify(i.funnel_stats)}
+Примеры последних транскриптов (обезличенные): ${JSON.stringify(i.sample_transcripts)}`;
+}
+
+export const funnelSchema = {
+  type: 'object',
+  properties: {
+    insights: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          finding: { type: 'string' },
+          evidence: { type: 'string' },
+          severity: { type: 'string', enum: ['high', 'med', 'low'] },
+        },
+        required: ['finding', 'evidence', 'severity'],
+        additionalProperties: false,
+      },
+    },
+    experiments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          hypothesis: { type: 'string' },
+          change: { type: 'string' },
+        },
+        required: ['hypothesis', 'change'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['insights', 'experiments'],
+  additionalProperties: false,
+};
