@@ -1,22 +1,24 @@
-/** Маска телефона РФ: +7 (XXX) XXX-XX-XX. */
+/** Маска телефона РФ: +7 (XXX) XXX-XX-XX. Ведущие 7/8 отбрасываются, максимум 10 цифр. */
 export function formatPhone(raw: string): string {
-  let d = raw.replace(/\D/g, '');
-  if (d.startsWith('8')) d = '7' + d.slice(1);
-  if (d && !d.startsWith('7')) d = '7' + d;
-  d = d.slice(0, 11);
-  if (!d) return '';
+  let d = (raw || '').replace(/\D/g, '');
+  if (d[0] === '7' || d[0] === '8') d = d.slice(1);
+  d = d.slice(0, 10);
   let out = '+7';
-  if (d.length > 1) out += ' (' + d.slice(1, 4);
-  if (d.length >= 4) out += ') ' + d.slice(4, 7);
-  if (d.length >= 7) out += '-' + d.slice(7, 9);
-  if (d.length >= 9) out += '-' + d.slice(9, 11);
+  if (d.length) out += ' (' + d.slice(0, 3);
+  if (d.length >= 3) out += ')';
+  if (d.length > 3) out += ' ' + d.slice(3, 6);
+  if (d.length > 6) out += '-' + d.slice(6, 8);
+  if (d.length > 8) out += '-' + d.slice(8, 10);
   return out;
 }
 
-export function isValidPhone(masked: string): boolean {
-  return masked.replace(/\D/g, '').length === 11;
+/** Возвращает 10 значащих цифр номера (без кода страны). */
+export function phoneDigits(v: string): string {
+  let d = (v || '').replace(/\D/g, '');
+  if (d[0] === '7' || d[0] === '8') d = d.slice(1);
+  return d.slice(0, 10);
 }
 
 export function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((email || '').trim());
 }

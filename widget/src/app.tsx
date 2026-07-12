@@ -1,80 +1,67 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { fetchMeta, fetchResult, sendAnswer, sendLead, startSession } from './api';
-import { formatPhone, isValidEmail, isValidPhone } from './phone';
-import type { HistoryEntry, QuizMeta, ResultResponse } from './types';
+import { formatPhone, isValidEmail, phoneDigits } from './phone';
+import type { HistoryEntry, QuizDesign, QuizMeta, ResultResponse } from './types';
 
-type Screen = 'loading' | 'cover' | 'question' | 'typing' | 'contact' | 'sending' | 'result' | 'error';
+/** Применяем тему квиза (6 параметров) к ближайшему .kv-root в Shadow DOM. */
+function applyThemeVars(el: HTMLElement | null, design: QuizDesign | undefined) {
+  const root = el?.closest('.kv-root') as HTMLElement | null;
+  if (!root || !design) return;
+  const map: Record<string, string | number | undefined> = {
+    '--kv-primary': design.primary, '--kv-grad': design.grad, '--kv-bg': design.bg,
+    '--kv-surface': design.surface, '--kv-text': design.text,
+    '--kv-radius': design.radius != null ? `${design.radius}px` : undefined,
+  };
+  for (const [k, v] of Object.entries(map)) if (v != null && v !== '') root.style.setProperty(k, String(v));
+}
 
-const MIN_TYPING_MS = 650; // «печатающаяся» пауза: скрывает задержку LLM, создаёт ощущение диалога
+type Screen = 'loading' | 'cover' | 'question' | 'ai' | 'contact' | 'result' | 'unavailable' | 'error';
+
+const MIN_AI_MS = 1900; // «печатающаяся» пауза: скрывает задержку LLM, создаёт ощущение диалога
+const LETTERS = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З'];
 
 function collectUtm(): Record<string, string> {
   const utm: Record<string, string> = {};
   try {
-    new URLSearchParams(location.search).forEach((v, k) => {
-      if (k.startsWith('utm_')) utm[k] = v;
-    });
-  } catch { /* SSR/страница без location — не критично */ }
+    new URLSearchParams(location.search).forEach((v, k) => { if (k.startsWith('utm_')) utm[k] = v; });
+  } catch { /* нет location — не критично */ }
   return utm;
 }
 
-const IconClock = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-    <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" />
-  </svg>
+/* ---------- Иконки (stroke 2px, как в дизайне) ---------- */
+const IArrow = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
 );
-const IconList = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-    <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
-  </svg>
+const ICheck = ({ s = 14 }: { s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
 );
-const IconGift = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7M12 7s-2-4-5-4-3 4 0 4h5zM12 7s2-4 5-4 3 4 0 4h-5z" />
-  </svg>
+const ISpark = ({ s = 22 }: { s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4" /><circle cx="12" cy="12" r="3.4" /></svg>
 );
-const IconCheck = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M20 6L9 17l-5-5" />
-  </svg>
+const IGift = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" /></svg>
 );
-const IconBack = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M15 18l-6-6 6-6" />
-  </svg>
+const ISad = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M9 9h.01M15 9h.01M8.5 15.5a4 4 0 0 1 7 0" /></svg>
+);
+const IOffline = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l22 22M16.7 16.7A11 11 0 0 1 12 18M5 12.5A6 6 0 0 1 9 11M8.5 8.5A11 11 0 0 1 20 12M2 8.8A16 16 0 0 1 7 6.4M12 21h.01" /></svg>
 );
 
-/** Лёгкое конфетти на экране результата (~1 КБ, без зависимостей). */
-function burstConfetti(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const W = (canvas.width = canvas.offsetWidth);
-  const H = (canvas.height = canvas.offsetHeight);
-  const colors = ['#6366f1', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899'];
-  const parts = Array.from({ length: 90 }, () => ({
-    x: W / 2, y: H * 0.35,
-    vx: (Math.random() - 0.5) * 11, vy: Math.random() * -10 - 3,
-    s: Math.random() * 6 + 3, r: Math.random() * Math.PI,
-    c: colors[(Math.random() * colors.length) | 0], life: 1,
-  }));
-  let frame = 0;
-  const tick = () => {
-    ctx.clearRect(0, 0, W, H);
-    let alive = false;
-    for (const p of parts) {
-      p.vy += 0.28; p.x += p.vx; p.y += p.vy; p.r += 0.1; p.life -= 0.011;
-      if (p.life <= 0 || p.y > H + 20) continue;
-      alive = true;
-      ctx.save();
-      ctx.globalAlpha = Math.max(p.life, 0);
-      ctx.translate(p.x, p.y); ctx.rotate(p.r);
-      ctx.fillStyle = p.c;
-      ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6);
-      ctx.restore();
-    }
-    if (alive && frame++ < 260) requestAnimationFrame(tick);
-    else ctx.clearRect(0, 0, W, H);
-  };
-  requestAnimationFrame(tick);
+/** Лёгкое конфетти (CSS-полоски, без зависимостей). */
+function Confetti({ primary }: { primary: string }) {
+  const palette = [primary, 'oklch(0.82 0.17 85)', 'oklch(0.7 0.16 20)', 'oklch(0.6 0.19 300)'];
+  return (
+    <div class="kv-confetti">
+      {Array.from({ length: 16 }).map((_, i) => (
+        <i key={i} style={{
+          left: `${6 + i * 6}%`, width: `${5 + (i % 3) * 2}px`, height: `${8 + (i % 2) * 4}px`,
+          background: palette[i % palette.length], borderRadius: i % 2 ? '1px' : '50%', opacity: 0,
+          animation: `kv-conf ${1.6 + (i % 4) * 0.25}s ease-in ${i * 0.06}s 1 forwards`,
+        }} />
+      ))}
+    </div>
+  );
 }
 
 export function QuizApp({ quizId, onClose }: { quizId: string; onClose?: () => void }) {
@@ -84,19 +71,28 @@ export function QuizApp({ quizId, onClose }: { quizId: string; onClose?: () => v
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [idx, setIdx] = useState(0);
   const [result, setResult] = useState<ResultResponse | null>(null);
-  const [error, setError] = useState('');
+  const [aiCaption, setAiCaption] = useState('Подбираем следующий вопрос под ваши ответы');
 
-  useEffect(() => {
+  const maxQuestions = meta?.settings.max_questions ?? 5;
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const load = () => {
+    setScreen('loading');
     fetchMeta(quizId)
-      .then((m) => { setMeta(m); setScreen('cover'); })
-      .catch(() => { setError('Квиз недоступен'); setScreen('error'); });
-  }, [quizId]);
+      .then((m) => { setMeta(m); applyThemeVars(cardRef.current, m.design); setScreen('cover'); })
+      .catch(() => setScreen('unavailable'));
+  };
+  useEffect(load, [quizId]);
 
   const start = async () => {
-    setScreen('typing');
+    setAiCaption('Подбираем первый вопрос');
+    setScreen('ai');
+    const t0 = Date.now();
     try {
       const res = await startSession(quizId, collectUtm());
       setSessionId(res.sessionId);
+      const wait = MIN_AI_MS - (Date.now() - t0);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       if (res.question) {
         setHistory([{ question: res.question, answer: null }]);
         setIdx(0);
@@ -105,84 +101,103 @@ export function QuizApp({ quizId, onClose }: { quizId: string; onClose?: () => v
         setScreen('contact');
       }
     } catch {
-      setError('Не удалось начать квиз. Попробуйте обновить страницу.');
       setScreen('error');
     }
   };
 
   const submitAnswer = async (value: string | string[] | number) => {
     const entry = history[idx];
-    // Ответ не изменился и следующий вопрос уже известен — просто шаг вперёд без сети
+    // ответ не изменился и следующий вопрос уже известен — шаг вперёд без сети
     if (idx < history.length - 1 && JSON.stringify(entry.answer) === JSON.stringify(value)) {
-      setIdx(idx + 1);
-      return;
+      setIdx(idx + 1); setScreen('question'); return;
     }
     const newHistory = history.slice(0, idx + 1);
     newHistory[idx] = { ...entry, answer: value };
     setHistory(newHistory);
-    setScreen('typing');
-    const startedAt = Date.now();
+    setAiCaption('Подбираем следующий вопрос под ваши ответы');
+    setScreen('ai');
+    const t0 = Date.now();
     try {
-      const res = await sendAnswer(quizId, {
-        sessionId, question: entry.question.title, answer: value, step: idx,
-      });
-      const wait = MIN_TYPING_MS - (Date.now() - startedAt);
+      const res = await sendAnswer(quizId, { sessionId, question: entry.question.title, answer: value, step: idx });
+      const wait = MIN_AI_MS - (Date.now() - t0);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       if (res.action === 'ask') {
         setHistory([...newHistory, { question: res.question, answer: null }]);
-        setIdx(idx + 1);
-        setScreen('question');
+        setIdx(idx + 1); setScreen('question');
       } else {
         setScreen('contact');
       }
     } catch {
-      // Посетитель никогда не видит ошибку: ведём его к форме контактов
-      setScreen('contact');
+      setScreen('contact'); // посетитель никогда не видит ошибку
     }
   };
 
-  const goBack = () => {
-    if (idx > 0) { setIdx(idx - 1); setScreen('question'); }
-  };
+  const goBack = () => { if (idx > 0) { setIdx(idx - 1); setScreen('question'); } };
 
   const submitLead = async (fields: { name?: string; phone?: string; email?: string }) => {
-    setScreen('sending');
-    try {
-      await sendLead(quizId, { sessionId, ...fields, consent: true });
-    } catch { /* лид мог сохраниться частично — результат всё равно показываем */ }
-    try {
-      setResult(await fetchResult(quizId, sessionId));
-    } catch {
-      setResult({
-        headline: 'Спасибо! Заявка принята',
-        body: 'Мы свяжемся с вами в ближайшее время с персональным предложением.',
-      });
+    setAiCaption('Готовим ваш персональный результат');
+    setScreen('ai');
+    const t0 = Date.now();
+    try { await sendLead(quizId, { sessionId, ...fields, consent: true }); } catch { /* могло сохраниться частично */ }
+    try { setResult(await fetchResult(quizId, sessionId)); }
+    catch {
+      setResult({ headline: 'Спасибо! Заявка принята', body: 'Мы свяжемся с вами в ближайшее время с персональным предложением.' });
     }
+    const wait = MIN_AI_MS - (Date.now() - t0);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     setScreen('result');
   };
 
+  const restart = () => { setHistory([]); setIdx(0); setResult(null); setScreen('cover'); };
+
+  const showHeader = screen === 'question' || screen === 'ai' || screen === 'contact';
+  const stepNum = screen === 'contact' ? maxQuestions : idx + 1;
+  const progressPct = screen === 'cover' ? 0
+    : screen === 'result' ? 100
+    : Math.round((Math.min(stepNum, maxQuestions) / (maxQuestions + 1)) * 100);
+
   return (
-    <div class="kv-card">
+    <div class="kv-card" ref={cardRef}>
       {onClose && <button class="kv-close" onClick={onClose} aria-label="Закрыть">✕</button>}
-      {screen === 'loading' && <TypingScreen label="Загружаем квиз…" />}
-      {screen === 'error' && <ErrorScreen text={error} />}
-      {screen === 'cover' && meta && <Cover meta={meta} onStart={start} />}
-      {screen === 'typing' && <TypingScreen label="Подбираем следующий вопрос…" />}
-      {screen === 'sending' && <TypingScreen label="Готовим персональный результат…" />}
-      {screen === 'question' && history[idx] && (
-        <QuestionScreen
-          key={idx}
-          entry={history[idx]}
-          index={idx}
-          total={Math.max(meta?.settings.max_questions ?? 7, history.length)}
-          onAnswer={submitAnswer}
-          onBack={idx > 0 ? goBack : undefined}
-        />
+
+      {showHeader && (
+        <div class="kv-header">
+          <button class="kv-back" onClick={screen === 'question' && idx > 0 ? goBack : undefined}
+            aria-label="Назад" style={{ visibility: screen === 'question' && idx > 0 ? 'visible' : 'hidden' }}>
+            <IArrow />
+          </button>
+          <div class="kv-progress-col">
+            {screen === 'question' && <div class="kv-step-label">Шаг {Math.min(stepNum, maxQuestions)} из {maxQuestions}</div>}
+            <div class="kv-bar"><div class="kv-bar-fill" style={{ width: `${progressPct}%` }} /></div>
+          </div>
+        </div>
       )}
-      {screen === 'contact' && meta && <ContactScreen meta={meta} onSubmit={submitLead} />}
-      {screen === 'result' && result && <ResultScreen result={result} meta={meta} onClose={onClose} />}
-      <div class="kv-brand">
-        <a href="https://kvalify.ru?utm_source=widget" target="_blank" rel="noopener">Сделано на Квалифай</a>
+
+      <div class="kv-body">
+        {screen === 'loading' && <LoadingScreen />}
+        {screen === 'cover' && meta && <Cover meta={meta} onStart={start} />}
+        {screen === 'question' && history[idx] && (
+          <QuestionScreen key={idx} entry={history[idx]} onAnswer={submitAnswer} />
+        )}
+        {screen === 'ai' && <AiScreen caption={aiCaption} />}
+        {screen === 'contact' && meta && <ContactScreen meta={meta} onSubmit={submitLead} />}
+        {screen === 'result' && result && <ResultScreen result={result} meta={meta} onRestart={restart} />}
+        {screen === 'unavailable' && (
+          <SystemScreen icon={<ISad />} title="Квиз пока недоступен"
+            text="Владелец сайта приостановил приём заявок. Загляните чуть позже." />
+        )}
+        {screen === 'error' && (
+          <SystemScreen icon={<IOffline />} title="Не удалось загрузить"
+            text="Проверьте соединение с интернетом — квиз откроется, как только связь восстановится."
+            onRetry={load} />
+        )}
+      </div>
+
+      <div class="kv-footer">
+        <span class="kv-footer-made">Сделано на</span>
+        <a class="kv-footer-brand" href="https://kvalify.ru?utm_source=widget" target="_blank" rel="noopener">
+          <span class="kv-footer-mark" />Квалифай
+        </a>
       </div>
     </div>
   );
@@ -191,64 +206,55 @@ export function QuizApp({ quizId, onClose }: { quizId: string; onClose?: () => v
 function Cover({ meta, onStart }: { meta: QuizMeta; onStart: () => void }) {
   const offer = meta.settings.offer_page;
   const count = meta.questionsCount || meta.settings.max_questions;
+  const chips = [
+    `${count} ${plural(count, 'вопрос', 'вопроса', 'вопросов')}`,
+    '≈ 1 минута',
+    ...(offer?.bonus ? [`Бонус: ${offer.bonus}`] : []),
+  ];
   return (
-    <div class="kv-cover kv-anim">
-      <div class="kv-blob" />
-      <span class="kv-eyebrow">Квиз</span>
-      <h1>{meta.title}</h1>
-      {offer?.subheadline && <p>{offer.subheadline}</p>}
-      <div class="kv-meta-row">
-        <span class="kv-chip"><IconList />{count} {plural(count, 'вопрос', 'вопроса', 'вопросов')}</span>
-        <span class="kv-chip"><IconClock />~1 минута</span>
-        {offer?.bonus && <span class="kv-chip"><IconGift />{offer.bonus}</span>}
-      </div>
-      <button class="kv-btn" onClick={onStart}>Пройти квиз</button>
+    <div class="kv-pane">
+      {meta.settings.eyebrow && <div class="kv-eyebrow">{meta.settings.eyebrow}</div>}
+      <h1 class="kv-cover-title">{meta.title}</h1>
+      {meta.settings.cover_subtitle && <p class="kv-sub">{meta.settings.cover_subtitle}</p>}
+      <div class="kv-chip-row">{chips.map((c) => <span key={c} class="kv-chip">{c}</span>)}</div>
+      <div class="kv-spacer" />
+      <button class="kv-cta" onClick={onStart}>Пройти квиз</button>
     </div>
   );
 }
 
-function QuestionScreen({ entry, index, total, onAnswer, onBack }: {
+function QuestionScreen({ entry, onAnswer }: {
   entry: HistoryEntry;
-  index: number;
-  total: number;
   onAnswer: (v: string | string[] | number) => void;
-  onBack?: () => void;
 }) {
   const q = entry.question;
-  const [picked, setPicked] = useState<string | null>(
-    typeof entry.answer === 'string' && q.type === 'single' ? entry.answer : null,
-  );
   const [multi, setMulti] = useState<string[]>(Array.isArray(entry.answer) ? entry.answer : []);
   const [text, setText] = useState(typeof entry.answer === 'string' && q.type === 'text' ? entry.answer : '');
-  const [slider, setSlider] = useState<number>(
-    typeof entry.answer === 'number' ? entry.answer : Math.floor((q.options.length - 1) / 2),
-  );
-  const progress = Math.round(((index + 1) / (total + 1)) * 100);
+  const [slider, setSlider] = useState<number>(typeof entry.answer === 'number' ? entry.answer : 50);
+  const [picked, setPicked] = useState<string | null>(null);
+
+  const hint = q.type === 'multi' ? 'Можно выбрать несколько'
+    : q.type === 'text' ? 'Пара слов — по желанию'
+    : q.type === 'slider' ? 'Двигайте ползунок'
+    : 'Выберите один вариант';
 
   const pickSingle = (opt: string) => {
-    if (picked) return; // защита от двойного клика
+    if (picked) return;
     setPicked(opt);
-    setTimeout(() => onAnswer(opt), 260); // микропауза: видно выбор до перехода
+    setTimeout(() => onAnswer(opt), 200);
   };
 
   return (
-    <div class="kv-q kv-anim">
-      <div class="kv-head">
-        {onBack
-          ? <button class="kv-btn-ghost" onClick={onBack}><IconBack />Назад</button>
-          : <span />}
-        <span class="kv-step"><b>{index + 1}</b> / {total}</span>
-      </div>
-      <div class="kv-progress"><i style={{ width: `${progress}%` }} /></div>
-      <h2>{q.title}</h2>
+    <div class="kv-pane">
+      <h2 class="kv-q-title">{q.title}</h2>
+      <div class="kv-q-hint">{hint}</div>
 
       {q.type === 'single' && (
         <div class="kv-opts">
           {q.options.map((opt, i) => (
             <button key={opt} class={`kv-opt${picked === opt ? ' on' : ''}`} onClick={() => pickSingle(opt)}>
-              <span class="kv-key">{String.fromCharCode(65 + i)}</span>
-              {opt}
-              <span class="kv-check"><IconCheck /></span>
+              <span class="kv-badge">{LETTERS[i] ?? i + 1}</span>
+              <span class="kv-opt-text"><span class="kv-opt-label">{opt}</span></span>
             </button>
           ))}
         </div>
@@ -257,52 +263,50 @@ function QuestionScreen({ entry, index, total, onAnswer, onBack }: {
       {q.type === 'multi' && (
         <>
           <div class="kv-opts">
-            {q.options.map((opt, i) => {
+            {q.options.map((opt) => {
               const on = multi.includes(opt);
               return (
-                <button
-                  key={opt}
-                  class={`kv-opt kv-multi${on ? ' on' : ''}`}
-                  onClick={() => setMulti(on ? multi.filter((o) => o !== opt) : [...multi, opt])}
-                >
-                  <span class="kv-key">{String.fromCharCode(65 + i)}</span>
-                  {opt}
-                  <span class="kv-check"><IconCheck /></span>
+                <button key={opt} class={`kv-opt${on ? ' on' : ''}`}
+                  onClick={() => setMulti(on ? multi.filter((o) => o !== opt) : [...multi, opt])}>
+                  <span class="kv-badge kv-check">{on && <ICheck />}</span>
+                  <span class="kv-opt-text"><span class="kv-opt-label">{opt}</span></span>
                 </button>
               );
             })}
           </div>
-          <button class="kv-btn" disabled={multi.length === 0} onClick={() => onAnswer(multi)}>Далее</button>
-        </>
-      )}
-
-      {q.type === 'text' && (
-        <>
-          <textarea
-            class="kv-textarea"
-            placeholder="Напишите ответ…"
-            value={text}
-            onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-          />
-          <div style={{ height: '14px' }} />
-          <button class="kv-btn" disabled={!text.trim()} onClick={() => onAnswer(text.trim())}>Далее</button>
+          <button class="kv-cta" disabled={multi.length === 0} onClick={() => onAnswer(multi)}>Далее</button>
         </>
       )}
 
       {q.type === 'slider' && (
         <>
-          <div class="kv-slider-val">{q.options[slider] ?? slider}</div>
-          <input
-            type="range"
-            class="kv-range"
-            min={0}
-            max={Math.max(q.options.length - 1, 10)}
-            value={slider}
-            onInput={(e) => setSlider(Number((e.target as HTMLInputElement).value))}
-          />
-          <button class="kv-btn" onClick={() => onAnswer(q.options[slider] ?? slider)}>Далее</button>
+          <div class="kv-slider-wrap">
+            <div class="kv-slider-row"><span class="kv-slider-val">{slider}</span></div>
+            <input type="range" class="kv-range" min={0} max={100} step={5} value={slider}
+              onInput={(e) => setSlider(Number((e.target as HTMLInputElement).value))} />
+            <div class="kv-slider-minmax"><span>0</span><span>100+</span></div>
+          </div>
+          <button class="kv-cta" onClick={() => onAnswer(slider)}>Далее</button>
         </>
       )}
+
+      {q.type === 'text' && (
+        <>
+          <textarea class="kv-textarea" placeholder="Например: заехать до Нового года, гипоаллергенные материалы, тёплый пол…" value={text}
+            onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} rows={4} />
+          <button class="kv-cta" onClick={() => onAnswer(text.trim() || '—')}>Показать результат</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AiScreen({ caption }: { caption: string }) {
+  return (
+    <div class="kv-ai">
+      <div class="kv-ai-avatar"><ISpark /></div>
+      <div class="kv-ai-bubble"><span /><span /><span /></div>
+      <div class="kv-ai-caption">{caption}</div>
     </div>
   );
 }
@@ -317,92 +321,117 @@ function ContactScreen({ meta, onSubmit }: {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
-  const [err, setErr] = useState('');
+  const [tried, setTried] = useState(false);
   const privacyUrl = meta.design?.privacy_url || 'https://kvalify.ru/privacy';
 
+  const eName = tried && fields.includes('name') && name.trim().length < 2 ? 'Введите имя' : '';
+  const ePhone = tried && fields.includes('phone') && phoneDigits(phone).length < 10 ? 'Введите телефон полностью' : '';
+  const eEmail = tried && fields.includes('email') && !fields.includes('phone') && !isValidEmail(email) ? 'Введите e-mail' : '';
+  const eConsent = tried && !consent ? 'Нужно согласие на обработку данных' : '';
+
   const submit = () => {
-    if (fields.includes('phone') && !isValidPhone(phone)) return setErr('Проверьте номер телефона');
-    if (fields.includes('email') && email && !isValidEmail(email)) return setErr('Проверьте email');
-    if (fields.includes('email') && !fields.includes('phone') && !email) return setErr('Укажите email');
-    if (!consent) return setErr('Нужно согласие на обработку данных');
-    setErr('');
-    onSubmit({
-      name: name.trim() || undefined,
-      phone: phone || undefined,
-      email: email.trim() || undefined,
-    });
+    setTried(true);
+    const ok = (!fields.includes('name') || name.trim().length >= 2)
+      && (!fields.includes('phone') || phoneDigits(phone).length >= 10)
+      && (!fields.includes('email') || fields.includes('phone') || isValidEmail(email))
+      && consent;
+    if (ok) onSubmit({ name: name.trim() || undefined, phone: phone || undefined, email: email.trim() || undefined });
   };
 
   return (
-    <div class="kv-contact kv-anim">
-      <h2>{offer?.headline ?? 'Куда отправить результат?'}</h2>
+    <div class="kv-pane">
+      <h2 class="kv-q-title">{offer?.headline ?? 'Готово! Куда отправить результат?'}</h2>
       <p class="kv-sub">{offer?.subheadline ?? 'Оставьте контакты — пришлём персональное предложение.'}</p>
-      {offer?.bonus && <div class="kv-bonus"><IconGift />{offer.bonus}</div>}
-      <div class="kv-fields">
-        {fields.includes('name') && (
-          <input class="kv-input" placeholder="Ваше имя" autocomplete="name" value={name}
-            onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-        )}
-        {fields.includes('phone') && (
-          <input class="kv-input" placeholder="+7 (___) ___-__-__" type="tel" inputMode="tel" autocomplete="tel"
-            value={phone}
-            onInput={(e) => {
-              const el = e.target as HTMLInputElement;
-              const v = formatPhone(el.value);
-              setPhone(v); el.value = v;
-            }} />
-        )}
-        {fields.includes('email') && (
-          <input class="kv-input" placeholder="Email" type="email" inputMode="email" autocomplete="email"
-            value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
-        )}
-      </div>
-      {err && <div class="kv-error">{err}</div>}
-      <label class="kv-consent">
-        <input type="checkbox" checked={consent} onChange={(e) => setConsent((e.target as HTMLInputElement).checked)} />
-        <span>
-          Согласен(на) на <a href={privacyUrl} target="_blank" rel="noopener">обработку персональных данных</a> (152-ФЗ)
+      {offer?.bonus && <div class="kv-bonus"><IGift /><span>{offer.bonus}</span></div>}
+
+      {fields.includes('name') && (
+        <div class="kv-field">
+          <label class="kv-label">Имя</label>
+          <input class={`kv-input${eName ? ' kv-err' : ''}`} placeholder="Как к вам обращаться"
+            autocomplete="name" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+          {eName && <div class="kv-err-text">{eName}</div>}
+        </div>
+      )}
+      {fields.includes('phone') && (
+        <div class="kv-field">
+          <label class="kv-label">Телефон</label>
+          <input class={`kv-input${ePhone ? ' kv-err' : ''}`} type="tel" inputMode="tel" autocomplete="tel"
+            placeholder="+7 (___) ___-__-__" value={phone}
+            onInput={(e) => { const el = e.target as HTMLInputElement; const v = formatPhone(el.value); setPhone(v); el.value = v; }} />
+          {ePhone && <div class="kv-err-text">{ePhone}</div>}
+        </div>
+      )}
+      {fields.includes('email') && (
+        <div class="kv-field">
+          <label class="kv-label">E-mail {!fields.includes('phone') ? '' : <span class="kv-label-opt">— по желанию</span>}</label>
+          <input class={`kv-input${eEmail ? ' kv-err' : ''}`} type="email" inputMode="email" autocomplete="email"
+            placeholder="you@mail.ru" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
+          {eEmail && <div class="kv-err-text">{eEmail}</div>}
+        </div>
+      )}
+
+      <button class={`kv-consent${consent ? ' on' : ''}${eConsent ? ' kv-err' : ''}`} role="checkbox"
+        aria-checked={consent} onClick={() => setConsent(!consent)}>
+        <span class="kv-consent-box">{consent && <ICheck s={13} />}</span>
+        <span class="kv-consent-text">
+          Соглашаюсь на обработку персональных данных согласно{' '}
+          <a class="kv-link" href={privacyUrl} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}>политике конфиденциальности</a>
         </span>
-      </label>
-      <button class="kv-btn" onClick={submit}>{(meta.settings as { cta_text?: string }).cta_text ?? 'Получить результат'}</button>
+      </button>
+      {eConsent && <div class="kv-err-text">{eConsent}</div>}
+
+      <button class="kv-cta" onClick={submit}>{(meta.settings as { cta_text?: string }).cta_text ?? 'Получить результат'}</button>
     </div>
   );
 }
 
-function ResultScreen({ result, meta, onClose }: {
-  result: ResultResponse;
-  meta: QuizMeta | null;
-  onClose?: () => void;
+function ResultScreen({ result, meta, onRestart }: {
+  result: ResultResponse; meta: QuizMeta | null; onRestart: () => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    if (canvasRef.current) burstConfetti(canvasRef.current);
-  }, []);
+  const primary = useMemo(() => meta?.design?.primary || 'oklch(0.53 0.20 274)', [meta]);
   const redirect = (meta?.settings as { redirect_url?: string } | undefined)?.redirect_url;
   return (
-    <div class="kv-result kv-anim">
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
-      <div class="kv-result-icon"><IconCheck /></div>
-      <h2>{result.headline}</h2>
-      <p>{result.body}</p>
-      {redirect
-        ? <a class="kv-btn" style={{ textDecoration: 'none', textAlign: 'center', display: 'block' }} href={redirect}>Перейти</a>
-        : onClose && <button class="kv-btn" onClick={onClose}>Закрыть</button>}
-    </div>
+    <>
+      <Confetti primary={primary} />
+      <div class="kv-pane">
+        <div class="kv-result-badge"><ISpark s={14} /><span>Ваш профиль</span></div>
+        <h2 class="kv-result-title">{result.headline}</h2>
+        <p class="kv-result-body">{result.body}</p>
+        <div class="kv-spacer" />
+        {redirect
+          ? <a class="kv-cta" style={{ textAlign: 'center', textDecoration: 'none', display: 'block' }} href={redirect}>Перейти</a>
+          : <button class="kv-cta" onClick={onRestart}>{(meta?.settings as { cta_text?: string })?.cta_text ?? 'Отлично'}</button>}
+        <button class="kv-cta-ghost" onClick={onRestart}>Пройти заново</button>
+      </div>
+    </>
   );
 }
 
-function TypingScreen({ label }: { label: string }) {
+function LoadingScreen() {
   return (
-    <div class="kv-typing kv-anim">
-      <div class="kv-typing-dots"><i /><i /><i /></div>
-      {label}
+    <div class="kv-pane">
+      <div class="kv-skel kv-skel-title" />
+      <div class="kv-skel kv-skel-line" />
+      <div class="kv-skel kv-skel-short" />
+      <div class="kv-skel kv-skel-opt" />
+      <div class="kv-skel kv-skel-opt" />
+      <div class="kv-skel kv-skel-opt" />
+      <div class="kv-loading-note">Загружаем квиз…</div>
     </div>
   );
 }
 
-function ErrorScreen({ text }: { text: string }) {
-  return <div class="kv-typing">{text}</div>;
+function SystemScreen({ icon, title, text, onRetry }: {
+  icon: preact.ComponentChildren; title: string; text: string; onRetry?: () => void;
+}) {
+  return (
+    <div class="kv-sys">
+      <div class="kv-sys-icon">{icon}</div>
+      <div class="kv-sys-title">{title}</div>
+      <div class="kv-sys-text">{text}</div>
+      {onRetry && <button class="kv-cta kv-sys-btn" onClick={onRetry}>Попробовать снова</button>}
+    </div>
+  );
 }
 
 function plural(n: number, one: string, few: string, many: string): string {

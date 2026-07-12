@@ -18,9 +18,10 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
+          {/* Онбординг — во весь экран, без сайдбара (как в дизайне) */}
+          <Route path="/new" element={<RequireAuth><NewQuizPage /></RequireAuth>} />
           <Route element={<RequireAuth><Layout /></RequireAuth>}>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/new" element={<NewQuizPage />} />
             <Route path="/quizzes/:id" element={<QuizEditorPage />} />
             <Route path="/leads" element={<LeadsPage />} />
           </Route>

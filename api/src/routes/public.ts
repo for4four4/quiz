@@ -102,6 +102,8 @@ export async function publicRoutes(app: FastifyInstance) {
         offer_page: quiz.settings.offer_page ?? null,
         cta_text: quiz.settings.cta_text ?? null,
         redirect_url: quiz.settings.redirect_url ?? null,
+        eyebrow: quiz.settings.eyebrow ?? null,
+        cover_subtitle: quiz.settings.cover_subtitle ?? null,
       },
       questionsCount: Number(count?.n ?? 0),
     };

@@ -21,15 +21,15 @@ import type { QuizDesign } from './types';
 
 function applyTheme(el: HTMLElement, design: QuizDesign | undefined) {
   if (!design) return;
-  const map: Record<string, string | undefined> = {
+  const map: Record<string, string | number | undefined> = {
     '--kv-primary': design.primary,
-    '--kv-primary2': design.primary_dark ?? design.primary,
+    '--kv-grad': design.grad,
     '--kv-bg': design.bg,
+    '--kv-surface': design.surface,
     '--kv-text': design.text,
-    '--kv-radius': design.radius,
-    '--kv-font': design.font,
+    '--kv-radius': design.radius != null ? `${design.radius}px` : undefined,
   };
-  for (const [k, v] of Object.entries(map)) if (v) el.style.setProperty(k, v);
+  for (const [k, v] of Object.entries(map)) if (v != null && v !== '') el.style.setProperty(k, String(v));
 }
 
 /** Хост с Shadow DOM: стили виджета не конфликтуют с CSS сайта. */

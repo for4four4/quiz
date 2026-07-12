@@ -10,24 +10,31 @@ export interface OfferPage {
   bonus?: string;
 }
 
+/** 6 параметров темизации (см. дизайн-хэндофф) + служебные. */
 export interface QuizDesign {
-  primary?: string;       // основной цвет кнопок/акцентов
-  primary_dark?: string;  // второй цвет градиента
-  bg?: string;
-  text?: string;
-  radius?: string;        // напр. '16px'
-  font?: string;
+  primary?: string;   // основной цвет
+  grad?: string;      // второй цвет градиента
+  bg?: string;        // фон карточки в тёмной теме
+  surface?: string;   // поверхность
+  text?: string;      // цвет текста
+  radius?: number;    // px, темизируемый радиус
   privacy_url?: string;
+}
+
+export interface QuizSettings {
+  max_questions: number;
+  contact_fields: string[];
+  offer_page: OfferPage | null;
+  cta_text?: string | null;
+  redirect_url?: string | null;
+  eyebrow?: string | null;
+  cover_subtitle?: string | null;
 }
 
 export interface QuizMeta {
   title: string;
   design: QuizDesign;
-  settings: {
-    max_questions: number;
-    contact_fields: string[];
-    offer_page: OfferPage | null;
-  };
+  settings: QuizSettings;
   questionsCount: number;
 }
 
