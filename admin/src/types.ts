@@ -33,9 +33,22 @@ export interface QuizSettings {
   redirect_url?: string;
 }
 
+export type CardStyle = 'classic' | 'photo' | 'minimal' | 'gradient' | 'banner';
+
+export interface QuizDesign {
+  primary?: string;
+  grad?: string;
+  bg?: string;
+  surface?: string;
+  text?: string;
+  radius?: number;
+  card_style?: CardStyle;
+  hero_image?: string;
+}
+
 export interface QuizFull extends QuizListItem {
   business_context: BusinessContext;
-  design: Record<string, string>;
+  design: QuizDesign;
   settings: QuizSettings;
   result_template: Record<string, unknown>;
   questions: Question[];

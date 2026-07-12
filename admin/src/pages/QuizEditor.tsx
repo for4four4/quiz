@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { api, ApiError } from '../api';
-import type { QuizFull } from '../types';
+import type { CardStyle, QuizDesign, QuizFull } from '../types';
+import { WidgetPreview } from '../components/WidgetPreview';
 import { Button, Field, Icon, icons, inputCls, Spinner, StatusChip, Toggle, useToast } from '../ui';
 
-type Tab = 'questions' | 'brief' | 'settings' | 'publish';
+type Tab = 'questions' | 'brief' | 'design' | 'settings' | 'publish';
 const tabs: { id: Tab; label: string }[] = [
   { id: 'questions', label: 'Вопросы' },
   { id: 'brief', label: 'Бриф для ИИ' },
+  { id: 'design', label: 'Дизайн' },
   { id: 'settings', label: 'Настройки' },
   { id: 'publish', label: 'Публикация' },
 ];
@@ -77,6 +79,7 @@ export function QuizEditorPage() {
 
       {tab === 'questions' && <QuestionsTab quiz={quiz} onSwitchMode={(m) => patch({ mode: m }, 'Режим переключён')} />}
       {tab === 'brief' && <BriefTab quiz={quiz} saving={saving} onSave={(bc) => patch({ business_context: bc }, 'Бриф сохранён')} />}
+      {tab === 'design' && <DesignTab quiz={quiz} saving={saving} onSave={(d) => patch({ design: d }, 'Дизайн сохранён')} />}
       {tab === 'settings' && <SettingsTab quiz={quiz} saving={saving} onSave={(s) => patch({ settings: s })} />}
       {tab === 'publish' && <PublishTab quiz={quiz} onSlug={(slug) => patch({ slug }, 'Ссылка обновлена')} />}
     </div>
@@ -150,6 +153,139 @@ function BriefTab({ quiz, saving, onSave }: { quiz: QuizFull; saving: boolean; o
         </Button>
       </div>
     </div>
+  );
+}
+
+/* ================= Дизайн ================= */
+const themePresets: { name: string; design: QuizDesign }[] = [
+  { name: 'Индиго', design: { primary: 'oklch(0.53 0.20 274)', grad: 'oklch(0.60 0.19 300)', surface: '#ffffff', text: 'oklch(0.24 0.03 275)' } },
+  { name: 'Изумруд', design: { primary: 'oklch(0.55 0.15 162)', grad: 'oklch(0.64 0.14 180)', surface: '#ffffff', text: 'oklch(0.24 0.03 200)' } },
+  { name: 'Закат', design: { primary: 'oklch(0.62 0.19 35)', grad: 'oklch(0.70 0.16 60)', surface: '#ffffff', text: 'oklch(0.26 0.04 40)' } },
+  { name: 'Океан', design: { primary: 'oklch(0.55 0.13 232)', grad: 'oklch(0.63 0.12 205)', surface: '#ffffff', text: 'oklch(0.24 0.03 235)' } },
+  { name: 'Ягода', design: { primary: 'oklch(0.55 0.22 350)', grad: 'oklch(0.60 0.20 320)', surface: '#ffffff', text: 'oklch(0.25 0.04 345)' } },
+  { name: 'Графит', design: { primary: 'oklch(0.72 0.14 162)', grad: 'oklch(0.78 0.13 180)', surface: 'oklch(0.25 0.02 265)', text: 'oklch(0.96 0.01 260)' } },
+];
+
+const cardStyles: { id: CardStyle; name: string; desc: string }[] = [
+  { id: 'classic', name: 'Классический', desc: 'заголовок, чипы, CTA — универсально' },
+  { id: 'photo', name: 'С фото', desc: 'картинка объекта сверху — доверие' },
+  { id: 'minimal', name: 'Минимал', desc: 'крупный заголовок, максимум воздуха' },
+  { id: 'gradient', name: 'Градиентная обложка', desc: 'яркий акцент — привлекает взгляд' },
+  { id: 'banner', name: 'Компакт-баннер', desc: 'горизонтальный — в узкие блоки' },
+];
+
+/** Мини-схема стиля карточки для селектора. */
+function StyleThumb({ id, active }: { id: CardStyle; active: boolean }) {
+  const bar = (w: string, h = 6, c = 'bg-line') => <span className={`block rounded-full ${c}`} style={{ width: w, height: h }} />;
+  const accent = active ? 'bg-primary' : 'bg-primary-tint-2';
+  const frame = `flex flex-col gap-1.5 rounded-[8px] border p-2.5 ${active ? 'border-primary' : 'border-line'}`;
+  if (id === 'photo') return <div className={frame}><span className="h-8 rounded-[5px] bg-primary-tint" />{bar('70%', 6, 'bg-line')}{bar('90%', 4)}<span className={`mt-0.5 h-3 rounded-[4px] ${accent}`} /></div>;
+  if (id === 'minimal') return <div className={`${frame} justify-center`}><span className={`h-3 w-3 rounded-[3px] ${accent}`} />{bar('80%', 7, 'bg-line')}{bar('50%', 7, 'bg-line')}<span className={`mt-1 h-3 rounded-[4px] ${accent}`} /></div>;
+  if (id === 'gradient') return <div className={`${frame} grad`}>{bar('40%', 4, 'bg-white/50')}{bar('75%', 7, 'bg-white/80')}{bar('90%', 4, 'bg-white/50')}<span className="mt-0.5 h-3 rounded-[4px] bg-white" /></div>;
+  if (id === 'banner') return <div className={`${frame} !flex-row items-center`}><span className={`h-6 w-6 flex-none rounded-[5px] ${accent}`} /><span className="flex flex-1 flex-col gap-1">{bar('90%', 5, 'bg-line')}{bar('60%', 4)}</span><span className={`h-4 w-8 flex-none rounded-[4px] ${accent}`} /></div>;
+  return <div className={frame}>{bar('40%', 4, 'bg-primary-tint-2')}{bar('80%', 7, 'bg-line')}{bar('90%', 4)}<span className="flex gap-1">{bar('24%', 5, 'bg-primary-tint')}{bar('24%', 5, 'bg-primary-tint')}</span><span className={`mt-0.5 h-3 rounded-[4px] ${accent}`} /></div>;
+}
+
+function DesignTab({ quiz, saving, onSave }: { quiz: QuizFull; saving: boolean; onSave: (d: QuizDesign) => void }) {
+  const [d, setD] = useState<QuizDesign>({ card_style: 'classic', ...quiz.design });
+  const set = (patch: Partial<QuizDesign>) => setD({ ...d, ...patch });
+  const activePreset = themePresets.find((p) => p.design.primary === d.primary)?.name;
+
+  return (
+    <div className="anim-fade grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="flex flex-col gap-6">
+        {/* Тема */}
+        <div className="rounded-[16px] border border-line bg-surface p-5">
+          <div className="mb-1 text-sm font-extrabold">Тема оформления</div>
+          <p className="mb-4 text-[13px] text-muted">Цвета и градиент кнопок. По умолчанию — фирменная «Индиго».</p>
+          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+            {themePresets.map((p) => {
+              const on = activePreset === p.name;
+              return (
+                <button key={p.name} onClick={() => set(p.design)}
+                  className={`flex flex-col items-center gap-1.5 rounded-[11px] border p-2 transition-all ${on ? 'border-primary bg-primary-tint' : 'border-line hover:border-faint'}`}>
+                  <span className="h-8 w-8 rounded-full" style={{ background: `linear-gradient(120deg, ${p.design.primary}, ${p.design.grad})` }} />
+                  <span className="text-[11px] font-bold">{p.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <ColorInput label="Основной" value={d.primary} onChange={(v) => set({ primary: v })} />
+            <ColorInput label="Градиент" value={d.grad} onChange={(v) => set({ grad: v })} />
+            <ColorInput label="Фон" value={d.surface} onChange={(v) => set({ surface: v })} />
+            <ColorInput label="Текст" value={d.text} onChange={(v) => set({ text: v })} />
+          </div>
+          <div className="mt-4">
+            <div className="mb-1.5 flex items-center justify-between text-[13px] font-bold">
+              <span>Скругление углов</span><span className="text-muted">{d.radius ?? 16}px</span>
+            </div>
+            <input type="range" min={0} max={28} step={2} value={d.radius ?? 16}
+              onChange={(e) => set({ radius: Number(e.target.value) })}
+              className="w-full accent-[oklch(0.53_0.2_274)]" />
+          </div>
+        </div>
+
+        {/* Стиль карточки */}
+        <div className="rounded-[16px] border border-line bg-surface p-5">
+          <div className="mb-1 text-sm font-extrabold">Стиль карточки</div>
+          <p className="mb-4 text-[13px] text-muted">Компоновка обложки. Применится ко всем режимам встраивания.</p>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {cardStyles.map((cs) => {
+              const on = (d.card_style || 'classic') === cs.id;
+              return (
+                <button key={cs.id} onClick={() => set({ card_style: cs.id })}
+                  className={`flex items-center gap-3 rounded-[11px] border p-3 text-left transition-all ${on ? 'border-primary bg-primary-tint/40' : 'border-line hover:border-faint'}`}>
+                  <span className="w-16 flex-none"><StyleThumb id={cs.id} active={on} /></span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-ink">{cs.name}</span>
+                    <span className="block text-[12px] text-muted">{cs.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {d.card_style === 'photo' && (
+            <div className="mt-4">
+              <Field label="Ссылка на фото объекта" hint="Прямая ссылка на изображение (JPG/PNG), которое покажется на обложке">
+                <input className={inputCls} placeholder="https://…/photo.jpg" value={d.hero_image ?? ''} onChange={(e) => set({ hero_image: e.target.value })} />
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setD({ card_style: 'classic', ...themePresets[0].design })}>Сбросить</Button>
+          <Button disabled={saving} onClick={() => onSave(d)}>{saving ? <Spinner /> : 'Сохранить дизайн'}</Button>
+        </div>
+      </div>
+
+      {/* Живое превью */}
+      <div className="lg:sticky lg:top-6 lg:self-start">
+        <div className="mb-3 text-center text-[11px] font-extrabold uppercase tracking-widest text-muted">Превью</div>
+        <div className="flex justify-center rounded-[22px] border border-line bg-canvas p-5">
+          <WidgetPreview quiz={quiz} design={d} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ColorInput({ label, value, onChange }: { label: string; value?: string; onChange: (v: string) => void }) {
+  // Нативный color-input отдаёт hex; oklch из пресета показываем свотчем, но для правки нужен hex.
+  const isHex = (value ?? '').startsWith('#');
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[12px] font-bold text-ink-2">{label}</span>
+      <span className="flex items-center gap-2 rounded-[11px] border border-line bg-surface px-2 py-1.5">
+        <span className="relative h-7 w-7 flex-none overflow-hidden rounded-[7px] border border-line" style={{ background: value || '#fff' }}>
+          <input type="color" value={isHex ? value : '#6366f1'} onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={label} />
+        </span>
+        <input className="min-w-0 flex-1 bg-transparent text-[12px] font-bold text-muted outline-none"
+          value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder="#6366f1" />
+      </span>
+    </label>
   );
 }
 

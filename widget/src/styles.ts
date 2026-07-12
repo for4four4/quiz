@@ -12,7 +12,7 @@ export const css = `
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .kv-root {
-  /* базовая тема «Индиго» */
+  
   --kv-primary: oklch(0.53 0.20 274);
   --kv-grad: oklch(0.60 0.19 300);
   --kv-bg: oklch(0.992 0.006 95);
@@ -21,7 +21,6 @@ export const css = `
   --kv-radius: 16px;
   --kv-cta-text: #ffffff;
 
-  /* производные */
   --kv-muted: color-mix(in oklab, var(--kv-text), transparent 44%);
   --kv-faint: color-mix(in oklab, var(--kv-text), transparent 90%);
   --kv-border: color-mix(in oklab, var(--kv-text), transparent 86%);
@@ -38,7 +37,6 @@ export const css = `
   -webkit-font-smoothing: antialiased;
 }
 
-/* радиусы кратно базовому */
 .kv-root { --r-sm: calc(var(--kv-radius) * 0.4); --r-md: calc(var(--kv-radius) * 0.65);
   --r-lg: calc(var(--kv-radius) * 0.75); --r-xl: calc(var(--kv-radius) * 1.4); }
 
@@ -51,7 +49,6 @@ export const css = `
   * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 
-/* ---------- Карточка ---------- */
 .kv-card {
   position: relative; display: flex; flex-direction: column;
   width: 100%; max-width: 560px; margin: 0 auto;
@@ -63,7 +60,6 @@ export const css = `
 }
 .kv-card.kv-sheet { border: none; border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: none; }
 
-/* ---------- Хедер (прогресс) ---------- */
 .kv-header { display: flex; align-items: center; gap: 12px; padding: 16px 18px 6px; }
 .kv-back {
   display: flex; align-items: center; justify-content: center; flex: none;
@@ -77,11 +73,9 @@ export const css = `
 .kv-bar { height: 5px; border-radius: 3px; background: var(--kv-border); overflow: hidden; }
 .kv-bar-fill { height: 100%; border-radius: 3px; background: var(--kv-gradient); transition: width .4s cubic-bezier(.4,0,.2,1); }
 
-/* ---------- Тело ---------- */
 .kv-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 22px 8px; display: flex; flex-direction: column; }
 .kv-pane { display: flex; flex-direction: column; gap: 14px; flex: 1; animation: kv-fade .32s ease both; }
 
-/* ---------- Обложка ---------- */
 .kv-eyebrow { font: 700 11px/1 var(--kv-body); letter-spacing: .14em; text-transform: uppercase; color: var(--kv-primary); }
 .kv-cover-title { font: 800 29px/1.08 var(--kv-body); letter-spacing: -.02em; color: var(--kv-text); text-wrap: balance; }
 .kv-sub { font: 500 15px/1.5 var(--kv-body); color: var(--kv-muted); text-wrap: pretty; }
@@ -94,7 +88,44 @@ export const css = `
 }
 .kv-spacer { flex: 1; min-height: 8px; }
 
-/* ---------- CTA ---------- */
+.kv-hero { position: relative; margin: -20px -22px 4px; }
+.kv-hero img { width: 100%; height: 190px; object-fit: cover; display: block; }
+.kv-hero-chip {
+  position: absolute; left: 14px; bottom: 12px;
+  display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
+  background: color-mix(in oklab, var(--kv-text), transparent 20%); color: #fff;
+  font: 700 12px/1 var(--kv-body); backdrop-filter: blur(4px);
+}
+.kv-cover-photo .kv-cover-title { font-size: 24px; }
+
+.kv-cover-minimal { justify-content: center; align-items: flex-start; gap: 20px; }
+.kv-mini-mark { width: 40px; height: 40px; border-radius: var(--r-md); background: var(--kv-gradient); }
+.kv-cover-minimal .kv-cover-title { font-size: 34px; line-height: 1.05; }
+
+.kv-cover-gradient {
+  margin: -20px -22px 0; padding: 26px 22px; border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: var(--kv-gradient); color: #fff; flex: 1;
+}
+.kv-cover-gradient .kv-eyebrow { color: rgba(255,255,255,.7); background: none; -webkit-text-fill-color: rgba(255,255,255,.7); }
+.kv-cover-gradient .kv-eyebrow::before { background: rgba(255,255,255,.7); }
+.kv-cover-gradient .kv-cover-title { color: #fff; }
+.kv-cover-gradient .kv-sub { color: rgba(255,255,255,.8); }
+.kv-cover-gradient .kv-cta { background: #fff; color: var(--kv-primary); box-shadow: 0 8px 22px rgba(0,0,0,.18); }
+
+.kv-cover-banner { flex-direction: row; align-items: center; gap: 14px; }
+.kv-banner-icon {
+  display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: var(--r-md);
+  background: var(--kv-tint); color: var(--kv-primary);
+}
+.kv-cover-banner .kv-banner-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kv-cover-banner .kv-cover-title { font-size: 18px; line-height: 1.2; }
+.kv-cover-banner .kv-sub { font-size: 13px; margin: 0; }
+.kv-cover-banner .kv-cta { width: auto; flex: none; margin: 0; padding: 13px 20px; }
+@media (max-width: 460px) {
+  .kv-cover-banner { flex-direction: column; align-items: stretch; }
+  .kv-cover-banner .kv-cta { width: 100%; }
+}
+
 .kv-cta {
   width: 100%; padding: 15px 20px; border: none; border-radius: var(--r-lg);
   background: var(--kv-gradient); color: var(--kv-cta-text); cursor: pointer;
@@ -106,7 +137,6 @@ export const css = `
 .kv-cta:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
 .kv-cta-ghost { width: 100%; padding: 12px; margin-top: 2px; border: none; background: transparent; color: var(--kv-muted); cursor: pointer; font: 600 14px/1 var(--kv-body); }
 
-/* ---------- Вопрос ---------- */
 .kv-q-title { font: 800 23px/1.15 var(--kv-body); letter-spacing: -.01em; color: var(--kv-text); text-wrap: balance; }
 .kv-q-hint { font: 500 13.5px/1.4 var(--kv-body); color: var(--kv-muted); margin-top: -6px; }
 .kv-opts { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -132,7 +162,6 @@ export const css = `
 .kv-opt-label { font: 600 15px/1.25 var(--kv-body); color: var(--kv-text); }
 .kv-opt-meta { font: 500 12.5px/1.2 var(--kv-body); color: var(--kv-muted); }
 
-/* картинки 2×2 */
 .kv-img-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
 .kv-img-opt {
   position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden;
@@ -148,7 +177,6 @@ export const css = `
 .kv-tick { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--kv-border); color: transparent; }
 .kv-img-opt.on .kv-tick { border-color: var(--kv-primary); background: var(--kv-primary); color: var(--kv-cta-text); }
 
-/* слайдер */
 .kv-slider-wrap { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; padding: 4px 2px; }
 .kv-slider-row { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
 .kv-slider-val { font: 800 46px/1 var(--kv-body); color: var(--kv-primary); letter-spacing: -.02em; }
@@ -156,7 +184,6 @@ export const css = `
 .kv-range { width: 100%; accent-color: var(--kv-primary); height: 6px; cursor: pointer; }
 .kv-slider-minmax { display: flex; justify-content: space-between; font: 500 12px/1 var(--kv-body); color: var(--kv-muted); }
 
-/* текст */
 .kv-textarea {
   width: 100%; margin-top: 6px; padding: 14px; border-radius: var(--r-md);
   border: 1.5px solid var(--kv-border); background: var(--kv-surface); color: var(--kv-text);
@@ -165,7 +192,6 @@ export const css = `
 }
 .kv-textarea:focus { border-color: var(--kv-primary); }
 
-/* ---------- ИИ печатает ---------- */
 .kv-ai { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; flex: 1; text-align: center; padding: 30px 10px; animation: kv-fade .3s ease both; }
 .kv-ai-avatar { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; background: var(--kv-tint); color: var(--kv-primary); animation: kv-pulse 1.8s ease-in-out infinite; }
 .kv-ai-bubble { display: inline-flex; align-items: center; gap: 6px; padding: 13px 18px; border-radius: 999px; background: var(--kv-tint2); min-width: 62px; justify-content: center; }
@@ -174,7 +200,6 @@ export const css = `
 .kv-ai-bubble span:nth-child(3) { animation-delay: .4s; }
 .kv-ai-caption { font: 600 15px/1.35 var(--kv-body); color: var(--kv-muted); max-width: 240px; }
 
-/* ---------- Контакты ---------- */
 .kv-bonus {
   display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: var(--r-md);
   background: var(--kv-tint); color: color-mix(in oklab, var(--kv-primary), black 14%);
@@ -209,7 +234,6 @@ export const css = `
 .kv-consent-text { font: 500 13px/1.45 var(--kv-body); color: var(--kv-text); }
 .kv-link { color: var(--kv-primary); text-decoration: underline; text-underline-offset: 2px; }
 
-/* ---------- Результат ---------- */
 .kv-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
 .kv-confetti i { position: absolute; top: -12px; display: block; }
 .kv-result-badge {
@@ -220,7 +244,6 @@ export const css = `
 .kv-result-title { font: 800 26px/1.15 var(--kv-body); letter-spacing: -.01em; color: var(--kv-text); text-wrap: balance; }
 .kv-result-body { font: 500 15px/1.55 var(--kv-body); color: var(--kv-muted); text-wrap: pretty; }
 
-/* ---------- Системные ---------- */
 .kv-skel { background: linear-gradient(90deg, var(--kv-faint), var(--kv-border), var(--kv-faint)); background-size: 480px 100%; border-radius: var(--r-sm); animation: kv-shimmer 1.3s linear infinite; }
 .kv-skel-title { height: 26px; width: 80%; margin-bottom: 4px; }
 .kv-skel-line { height: 14px; width: 100%; }
@@ -233,13 +256,11 @@ export const css = `
 .kv-sys-text { font: 500 14px/1.5 var(--kv-body); color: var(--kv-muted); max-width: 260px; }
 .kv-sys-btn { width: auto; padding: 13px 24px; }
 
-/* ---------- Подвал ---------- */
 .kv-footer { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 12px; border-top: 1px solid var(--kv-border); }
 .kv-footer-made { font: 500 11.5px/1 var(--kv-body); color: var(--kv-muted); }
 .kv-footer-brand { display: inline-flex; align-items: center; gap: 4px; font: 700 11.5px/1 var(--kv-body); color: var(--kv-text); text-decoration: none; }
 .kv-footer-mark { width: 12px; height: 12px; border-radius: 3px; background: var(--kv-gradient); display: inline-block; transform: rotate(45deg); }
 
-/* ---------- Попап / лаунчер ---------- */
 .kv-overlay {
   position: fixed; inset: 0; z-index: 2147483000;
   background: rgba(20,20,50,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
@@ -260,7 +281,6 @@ export const css = `
 }
 .kv-launcher:hover { transform: translateY(-2px); }
 
-/* ---------- Мобильная вёрстка ---------- */
 @media (max-width: 560px) {
   .kv-cover-title { font-size: 25px; }
   .kv-q-title { font-size: 21px; }

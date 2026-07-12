@@ -10,6 +10,8 @@ export interface OfferPage {
   bonus?: string;
 }
 
+export type CardStyle = 'classic' | 'photo' | 'minimal' | 'gradient' | 'banner';
+
 /** 6 параметров темизации (см. дизайн-хэндофф) + служебные. */
 export interface QuizDesign {
   primary?: string;   // основной цвет
@@ -18,6 +20,8 @@ export interface QuizDesign {
   surface?: string;   // поверхность
   text?: string;      // цвет текста
   radius?: number;    // px, темизируемый радиус
+  card_style?: CardStyle;  // компоновка обложки
+  hero_image?: string;     // картинка для стиля «С фото»
   privacy_url?: string;
 }
 

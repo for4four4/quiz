@@ -206,17 +206,78 @@ export function QuizApp({ quizId, onClose }: { quizId: string; onClose?: () => v
 function Cover({ meta, onStart }: { meta: QuizMeta; onStart: () => void }) {
   const offer = meta.settings.offer_page;
   const count = meta.questionsCount || meta.settings.max_questions;
+  const sub = meta.settings.cover_subtitle;
+  const style = meta.design?.card_style || 'classic';
   const chips = [
     `${count} ${plural(count, 'вопрос', 'вопроса', 'вопросов')}`,
     '≈ 1 минута',
     ...(offer?.bonus ? [`Бонус: ${offer.bonus}`] : []),
   ];
+  const chipRow = <div class="kv-chip-row">{chips.map((c) => <span key={c} class="kv-chip">{c}</span>)}</div>;
+
+  // «Минимал» — крупный заголовок и максимум воздуха
+  if (style === 'minimal') {
+    return (
+      <div class="kv-pane kv-cover-minimal">
+        <div class="kv-mini-mark" />
+        <h1 class="kv-cover-title">{meta.title}</h1>
+        <div class="kv-spacer" />
+        <button class="kv-cta" onClick={onStart}>Начать →</button>
+      </div>
+    );
+  }
+
+  // «Компакт-баннер» — горизонтальный, для узких блоков
+  if (style === 'banner') {
+    return (
+      <div class="kv-pane kv-cover-banner">
+        <span class="kv-banner-icon"><ISpark s={22} /></span>
+        <div class="kv-banner-body">
+          <h1 class="kv-cover-title">{meta.title}</h1>
+          <p class="kv-sub">{count} {plural(count, 'вопрос', 'вопроса', 'вопросов')} · ≈ 1 минута{offer?.bonus ? ` · ${offer.bonus}` : ''}</p>
+        </div>
+        <button class="kv-cta" onClick={onStart}>Пройти квиз</button>
+      </div>
+    );
+  }
+
+  // «Градиентная обложка» — весь экран в градиенте
+  if (style === 'gradient') {
+    return (
+      <div class="kv-pane kv-cover-gradient">
+        {meta.settings.eyebrow && <div class="kv-eyebrow">{meta.settings.eyebrow}</div>}
+        <h1 class="kv-cover-title">{meta.title}</h1>
+        {sub && <p class="kv-sub">{sub}</p>}
+        {chipRow}
+        <div class="kv-spacer" />
+        <button class="kv-cta" onClick={onStart}>Пройти квиз</button>
+      </div>
+    );
+  }
+
+  // «С фото» — картинка объекта сверху
+  if (style === 'photo' && meta.design?.hero_image) {
+    return (
+      <div class="kv-pane kv-cover-photo">
+        <div class="kv-hero">
+          <img src={meta.design.hero_image} alt="" />
+          <span class="kv-hero-chip">≈ 1 минута · {count} {plural(count, 'вопрос', 'вопроса', 'вопросов')}</span>
+        </div>
+        <h1 class="kv-cover-title">{meta.title}</h1>
+        {sub && <p class="kv-sub">{sub}</p>}
+        <div class="kv-spacer" />
+        <button class="kv-cta" onClick={onStart}>Пройти квиз</button>
+      </div>
+    );
+  }
+
+  // «Классический» (по умолчанию)
   return (
     <div class="kv-pane">
       {meta.settings.eyebrow && <div class="kv-eyebrow">{meta.settings.eyebrow}</div>}
       <h1 class="kv-cover-title">{meta.title}</h1>
-      {meta.settings.cover_subtitle && <p class="kv-sub">{meta.settings.cover_subtitle}</p>}
-      <div class="kv-chip-row">{chips.map((c) => <span key={c} class="kv-chip">{c}</span>)}</div>
+      {sub && <p class="kv-sub">{sub}</p>}
+      {chipRow}
       <div class="kv-spacer" />
       <button class="kv-cta" onClick={onStart}>Пройти квиз</button>
     </div>
