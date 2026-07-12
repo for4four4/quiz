@@ -62,15 +62,16 @@ export const api = {
     request<{ transcript: TranscriptItem[] }>(`/api/leads/${leadId}/transcript`),
 
   integrations: () => request<IntegrationInfo[]>('/api/integrations'),
-  saveTelegram: (body: { bot_token?: string; chat_id: string; notify_segments: string[]; enabled: boolean }) =>
-    request<{ ok: true }>('/api/integrations/telegram', { method: 'PUT', body: JSON.stringify(body) }),
-  deleteTelegram: () => request<{ ok: true }>('/api/integrations/telegram', { method: 'DELETE' }),
-  testTelegram: (body: { bot_token?: string; chat_id?: string }) =>
-    request<{ ok: true }>('/api/integrations/telegram/test', { method: 'POST', body: JSON.stringify(body) }),
+  saveIntegration: (type: string, body: Record<string, unknown>) =>
+    request<{ ok: true }>(`/api/integrations/${type}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteIntegration: (type: string) =>
+    request<{ ok: true }>(`/api/integrations/${type}`, { method: 'DELETE' }),
+  testIntegration: (type: string, body: Record<string, unknown>) =>
+    request<{ ok: true }>(`/api/integrations/${type}/test`, { method: 'POST', body: JSON.stringify(body) }),
 };
 
 export interface IntegrationInfo {
   type: string;
   enabled: boolean;
-  config: { chat_id?: string; notify_segments?: string[]; has_token?: boolean } & Record<string, unknown>;
+  config: { notify_segments?: string[]; has_secret?: boolean } & Record<string, unknown>;
 }

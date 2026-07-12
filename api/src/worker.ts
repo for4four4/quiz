@@ -1,7 +1,7 @@
 import { one, q, pool } from './db.js';
 import { scoreLead } from './services/ai.js';
 import { runFraudChecks } from './services/antifraud.js';
-import { formatLeadMessage, sendTelegramMessage, type TelegramConfig } from './services/telegram.js';
+import { formatLeadMessage, sendNotification, type ChannelType } from './services/notify.js';
 
 /**
  * Простой воркер очереди jobs (таблица в Postgres — по спеке на MVP хватит).
@@ -100,23 +100,29 @@ async function handleScoreLead(payload: Record<string, unknown>) {
   }
 }
 
-/** Шлём лид в Telegram, если у воркспейса настроена интеграция и сегмент подходит. */
+/** Шлём лид во все включённые каналы воркспейса, чей набор сегментов подходит. */
 async function notifyLead(workspaceId: string, leadId: string, lead: Parameters<typeof formatLeadMessage>[0] & { segment: string | null }) {
-  const integ = await one<{ config: TelegramConfig }>(
-    `SELECT config FROM integrations WHERE workspace_id = $1 AND type = 'telegram' AND enabled = true`,
+  const channels = await q<{ type: ChannelType; config: { notify_segments?: string[] } & Record<string, unknown> }>(
+    `SELECT type, config FROM integrations WHERE workspace_id = $1 AND enabled = true`,
     [workspaceId],
   );
-  if (!integ?.config?.bot_token || !integ.config.chat_id) return;
+  if (!channels.length || !lead.segment) return;
 
-  const segments = integ.config.notify_segments?.length ? integ.config.notify_segments : ['hot'];
-  if (!lead.segment || !segments.includes(lead.segment)) return;
-
-  // Защита от повторной отправки при ретрае задачи: помечаем только после успеха.
+  // Защита от повторной отправки при ретрае задачи: помечаем после первой успешной.
   const already = await one<{ notified_at: string | null }>('SELECT notified_at FROM leads WHERE id = $1', [leadId]);
   if (already?.notified_at) return;
 
-  await sendTelegramMessage(integ.config, formatLeadMessage(lead));
-  await q('UPDATE leads SET notified_at = now() WHERE id = $1', [leadId]);
+  const text = formatLeadMessage(lead);
+  let sentAny = false;
+  const errors: string[] = [];
+  for (const ch of channels) {
+    const segments = ch.config.notify_segments?.length ? ch.config.notify_segments : ['hot'];
+    if (!segments.includes(lead.segment)) continue;
+    try { await sendNotification(ch.type, ch.config, text); sentAny = true; }
+    catch (err) { errors.push(`${ch.type}: ${err instanceof Error ? err.message : err}`); }
+  }
+  if (sentAny) await q('UPDATE leads SET notified_at = now() WHERE id = $1', [leadId]);
+  if (errors.length) throw new Error(errors.join('; '));
 }
 
 async function processJob(job: Job) {
