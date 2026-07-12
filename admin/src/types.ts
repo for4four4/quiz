@@ -8,13 +8,26 @@ export interface QuizListItem {
   updated_at: string;
 }
 
+export type QuestionType = 'single' | 'multi' | 'image' | 'slider' | 'text';
+export interface QuestionOption { label: string; img?: string }
+
 export interface Question {
   id: string;
   position: number;
   type: string;
   title: string;
-  options: { label: string }[];
+  options: QuestionOption[];
+  required?: boolean;
   branch_rules: { why?: string };
+}
+
+/** Черновик вопроса в редакторе (без id/position — их проставляет сервер). */
+export interface QuestionDraft {
+  type: QuestionType;
+  title: string;
+  options: QuestionOption[];
+  required?: boolean;
+  branch_rules?: { why?: string };
 }
 
 export interface BusinessContext {

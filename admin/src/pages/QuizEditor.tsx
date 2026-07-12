@@ -5,7 +5,8 @@ import { api, ApiError } from '../api';
 import type { CardStyle, QuizDesign, QuizFull } from '../types';
 import { WidgetPreview } from '../components/WidgetPreview';
 import { AnalyticsTab } from '../components/AnalyticsTab';
-import { Button, Field, Icon, icons, inputCls, Spinner, StatusChip, Toggle, useToast } from '../ui';
+import { QuestionsEditor } from '../components/QuestionsEditor';
+import { Button, Field, Icon, icons, inputCls, Spinner, StatusChip, useToast } from '../ui';
 
 type Tab = 'questions' | 'brief' | 'design' | 'analytics' | 'settings' | 'publish';
 const tabs: { id: Tab; label: string }[] = [
@@ -16,7 +17,6 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'settings', label: 'Настройки' },
   { id: 'publish', label: 'Публикация' },
 ];
-const typeLabels: Record<string, string> = { single: 'один', multi: 'неск.', slider: 'слайдер', text: 'текст', image: 'картинки' };
 
 export function QuizEditorPage() {
   const { id = '' } = useParams();
@@ -79,55 +79,16 @@ export function QuizEditorPage() {
         ))}
       </div>
 
-      {tab === 'questions' && <QuestionsTab quiz={quiz} onSwitchMode={(m) => patch({ mode: m }, 'Режим переключён')} />}
+      {tab === 'questions' && (
+        <QuestionsEditor quiz={quiz} mode={quiz.mode}
+          onSwitchMode={(m) => patch({ mode: m }, 'Режим переключён')}
+          onSaved={(questions) => setQuiz({ ...quiz, questions })} />
+      )}
       {tab === 'brief' && <BriefTab quiz={quiz} saving={saving} onSave={(bc) => patch({ business_context: bc }, 'Бриф сохранён')} />}
       {tab === 'design' && <DesignTab quiz={quiz} saving={saving} onSave={(d) => patch({ design: d }, 'Дизайн сохранён')} />}
       {tab === 'analytics' && <AnalyticsTab quizId={quiz.id} />}
       {tab === 'settings' && <SettingsTab quiz={quiz} saving={saving} onSave={(s) => patch({ settings: s })} />}
       {tab === 'publish' && <PublishTab quiz={quiz} onSlug={(slug) => patch({ slug }, 'Ссылка обновлена')} />}
-    </div>
-  );
-}
-
-/* ================= Вопросы ================= */
-function QuestionsTab({ quiz, onSwitchMode }: { quiz: QuizFull; onSwitchMode: (m: 'static' | 'adaptive') => void }) {
-  const ai = quiz.mode === 'adaptive';
-  return (
-    <div className="anim-fade flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-4 rounded-[16px] border border-primary-tint-2 bg-primary-tint/50 p-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold">Режим ИИ</span>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${ai ? 'bg-primary-tint-2 text-primary' : 'bg-line-2 text-muted'}`}>
-              {ai ? 'включён' : 'выключен'}
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-muted">
-            ИИ адаптирует вопросы под ответы посетителя и оценивает лиды. Выключите, чтобы показывать фиксированный список вопросов.
-          </p>
-        </div>
-        <Toggle on={ai} onChange={(v) => onSwitchMode(v ? 'adaptive' : 'static')} />
-      </div>
-
-      {quiz.questions.map((q, i) => (
-        <div key={q.id} className="flex items-center gap-4 rounded-[16px] border border-line bg-surface p-4">
-          <span className="grid h-8 w-8 flex-none place-items-center rounded-[10px] bg-primary-tint text-sm font-extrabold text-primary">{i + 1}</span>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-extrabold leading-snug">{q.title}</h3>
-            <p className="mt-0.5 text-[13px] text-muted">
-              {q.options.length ? q.options.map((o) => o.label).join(' · ') : { slider: 'диапазон', text: 'свободный текст' }[q.type] ?? '—'}
-            </p>
-          </div>
-          <span className="rounded-full bg-primary-tint px-2.5 py-1 text-[11px] font-bold text-primary">{typeLabels[q.type] ?? q.type}</span>
-          <button className="grid h-9 w-9 flex-none place-items-center rounded-[10px] border border-line text-muted transition-colors hover:border-primary hover:text-primary" aria-label="Изменить">
-            <Icon path={icons.pencil} size={15} />
-          </button>
-        </div>
-      ))}
-
-      <button className="rounded-[16px] border border-dashed border-line py-4 text-sm font-bold text-muted transition-colors hover:border-primary hover:text-primary">
-        + Добавить вопрос
-      </button>
     </div>
   );
 }

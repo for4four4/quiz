@@ -1,4 +1,4 @@
-import type { Analytics, FunnelAnalysis, GeneratedQuiz, Lead, QuizFull, QuizListItem, TranscriptItem } from './types';
+import type { Analytics, FunnelAnalysis, GeneratedQuiz, Lead, Question, QuestionDraft, QuizFull, QuizListItem, TranscriptItem } from './types';
 
 const TOKEN_KEY = 'kvalify_token';
 
@@ -50,6 +50,8 @@ export const api = {
     }),
   patchQuiz: (id: string, patch: Record<string, unknown>) =>
     request<{ id: string }>(`/api/quizzes/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  saveQuestions: (id: string, questions: QuestionDraft[]) =>
+    request<{ questions: Question[] }>(`/api/quizzes/${id}/questions`, { method: 'PUT', body: JSON.stringify({ questions }) }),
 
   leads: (opts: { quizId?: string; includeJunk?: boolean } = {}) => {
     const params = new URLSearchParams();

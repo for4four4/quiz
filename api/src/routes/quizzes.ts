@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { one, q } from '../db.js';
+import { one, q, pool } from '../db.js';
 import { generateQuiz } from '../services/ai.js';
 
 interface JwtPayload { userId: string; workspaceId: string }
@@ -107,6 +107,55 @@ export async function quizRoutes(app: FastifyInstance) {
     );
     if (!updated) return reply.code(404).send({ error: 'Квиз не найден' });
     return updated;
+  });
+
+  // Полная замена вопросов-скелета (редактор + drag&drop). Позиции — по порядку массива.
+  const questionsSchema = z.object({
+    questions: z.array(z.object({
+      type: z.enum(['single', 'multi', 'image', 'slider', 'text', 'date']),
+      title: z.string().min(1, 'Вопрос не может быть пустым').max(300),
+      options: z.array(z.object({
+        label: z.string().max(200),
+        img: z.string().max(600).optional(),
+      })).max(8).default([]),
+      required: z.boolean().default(true),
+      branch_rules: z.record(z.unknown()).default({}),
+    })).max(15),
+  });
+
+  app.put('/api/quizzes/:id/questions', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = questionsSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0].message });
+
+    const owns = await one('SELECT id FROM quizzes WHERE id = $1 AND workspace_id = $2', [id, ws(req)]);
+    if (!owns) return reply.code(404).send({ error: 'Квиз не найден' });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM questions WHERE quiz_id = $1', [id]);
+      const qs = parsed.data.questions;
+      for (let i = 0; i < qs.length; i++) {
+        const question = qs[i];
+        await client.query(
+          `INSERT INTO questions(quiz_id, position, type, title, options, required, branch_rules)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, i, question.type, question.title, JSON.stringify(question.options),
+           question.required, JSON.stringify(question.branch_rules)],
+        );
+      }
+      await client.query('UPDATE quizzes SET updated_at = now() WHERE id = $1', [id]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    const questions = await q('SELECT * FROM questions WHERE quiz_id = $1 ORDER BY position', [id]);
+    return { questions };
   });
 
   // Лиды воркспейса: junk по умолчанию скрыт (фильтр честности антифрода)
