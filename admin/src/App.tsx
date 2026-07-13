@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { getToken } from './api';
 import { Layout } from './components/Layout';
 import { AuthPage } from './pages/Auth';
@@ -10,7 +10,11 @@ import { QuizEditorPage } from './pages/QuizEditor';
 import { ToastProvider } from './ui';
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
-  return getToken() ? children : <Navigate to="/auth" replace />;
+  const loc = useLocation();
+  if (getToken()) return children;
+  // Сохраняем, куда шёл пользователь (напр. /new?niche=…), чтобы вернуть после входа
+  const next = encodeURIComponent(loc.pathname + loc.search);
+  return <Navigate to={`/auth?next=${next}`} replace />;
 }
 
 export default function App() {

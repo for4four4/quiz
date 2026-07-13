@@ -23,7 +23,8 @@ export function AuthPage() {
     try {
       const res = mode === 'register' ? await api.register(email, password) : await api.login(email, password);
       setToken(res.token);
-      navigate(mode === 'register' ? '/new' : '/');
+      const next = new URLSearchParams(window.location.search).get('next');
+      navigate(next ? decodeURIComponent(next) : mode === 'register' ? '/new' : '/');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Что-то пошло не так, попробуйте ещё раз');
     } finally { setBusy(false); }

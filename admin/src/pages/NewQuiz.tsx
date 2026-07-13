@@ -34,6 +34,21 @@ export function NewQuizPage() {
   const [goal, setGoal] = useState('');
   const [geo, setGeo] = useState('');
   const [idealLead, setIdealLead] = useState('');
+
+  // Префилл брифа из галереи «квиз для {ниша}» (?niche=slug)
+  useEffect(() => {
+    const niche = new URLSearchParams(window.location.search).get('niche');
+    if (!niche) return;
+    fetch(`/api/niches/${niche}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: { brief: { business_description: string; goal: string; geo: string; ideal_lead: string } }) => {
+        setBusiness(data.brief.business_description);
+        setGoal(data.brief.goal);
+        setGeo(data.brief.geo);
+        setIdealLead(data.brief.ideal_lead);
+      })
+      .catch(() => {});
+  }, []);
   const [busy, setBusy] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [error, setError] = useState('');

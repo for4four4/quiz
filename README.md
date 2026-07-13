@@ -27,6 +27,8 @@ LLM подключён через агрегатор **Polza.ai** (OpenAI-сов
 - **Уведомления в мессенджеры**: экран «Интеграции» — боты Telegram (@BotFather), ВКонтакте (токен сообщества + peer_id) и MAX (@MasterBot). Воркер шлёт лид во все включённые каналы, чей набор сегментов подходит, сразу после скоринга. Токены хранятся в БД (таблица `integrations`), env-переменных не требуют.
 - **Аналитика**: вкладка «Аналитика» в редакторе — воронка по шагам из таблицы `events` (просмотр → старт → каждый вопрос → заявка с процентом отвала), конверсия, средний скоринг, топ UTM-источников. Кнопка «Проанализировать воронку» запускает ИИ-аналитика (промпт 5) — инсайты со степенью важности и гипотезы для A/B-тестов.
 - **Редактор вопросов**: вкладка «Вопросы» — инлайн-правка текста и вариантов, смена типа (один/несколько/картинки/слайдер/текст), сортировка перетаскиванием, добавление и удаление. Тип «С картинками» — превью и ссылка на фото у каждого варианта. Сохранение через `PUT /api/quizzes/:id/questions`.
+- **Загрузка картинок**: `POST /api/uploads` (JPG/PNG/WEBP/GIF, до 5 МБ) → файл в `UPLOAD_DIR`, раздаётся на `/uploads/*`. В редакторе — кнопка «Загрузить файл» у вариантов «с картинками» и у фото обложки (стиль «С фото»).
+- **SEO-галерея «квиз для {ниша}»**: серверный рендер `/kviz-dlya` и `/kviz-dlya/:slug` (10 ниш) с мета-тегами и CTA в онбординг с предзаполненным брифом (`/new?niche=slug`).
 
 ---
 
@@ -55,17 +57,17 @@ cd ../widget && npm install && npm run build   # dist/kvalify-widget.js
 
 ## Установка на сервер Ubuntu
 
-Инструкция проверена под **Ubuntu 25/26 + Node.js 22**. Проект целиком на Node.js — **PHP не требуется** (установленный PHP 8.5 не мешает, он просто не используется). Все команды — от root (или с `sudo`).
+Инструкция под **Ubuntu 25/26 + Node.js 22**, домен **qvalify.ru**, папка проекта **`/var/www/quiz`**. Проект целиком на Node.js — **PHP не требуется**. Все команды — от root (или через `sudo`).
+
+> Замените в командах `qvalify.ru` на свой домен и `СЛОЖНЫЙ_ПАРОЛЬ` на настоящий пароль БД. Предполагается, что DNS домена уже указывает A-записью на IP сервера.
 
 ### 1. Пакеты
 
 ```bash
 apt update
 apt install -y git nginx postgresql postgresql-contrib
-
-# Node 22 должен быть уже установлен — проверьте:
-node -v        # ожидаем v22.x
-# Если нет: apt install -y curl && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs
+node -v        # ожидаем v22.x; если нет:
+# apt install -y curl && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs
 ```
 
 ### 2. База данных
@@ -80,122 +82,127 @@ SQL
 ### 3. Код и зависимости
 
 ```bash
-mkdir -p /opt && cd /opt
-git clone https://github.com/for4four4/quiz.git kvalify
-cd kvalify
+# Клонируем прямо в папку сайта
+mkdir -p /var/www && cd /var/www
+git clone https://github.com/for4four4/quiz.git quiz
+cd quiz
 
 # API
 cd api
 cp .env.example .env
-nano .env    # см. таблицу переменных ниже — минимум: DATABASE_URL, JWT_SECRET, POLZA_API_KEY
+nano .env          # заполнить (см. таблицу ниже)
 npm ci
-npm run migrate      # применит db/migrations/*.sql
-npm run build        # tsc → dist/
+npm run migrate    # применит db/migrations/*.sql
+npm run build      # tsc → dist/
 
-# Виджет и админка (собираются один раз, дальше их раздаёт nginx)
+# Виджет и админка (собираются один раз, дальше раздаёт nginx)
 cd ../widget && npm ci && npm run build
 cd ../admin  && npm ci && npm run build
+
+# Папка для загруженных картинок
+mkdir -p /var/www/quiz/uploads
+chown -R www-data:www-data /var/www/quiz
 ```
 
-Переменные `api/.env`:
+Переменные `api/.env` (минимум — первые пять):
 
-| Переменная | Что это |
+| Переменная | Значение |
 |---|---|
-| `PORT` | Порт API, по умолчанию `8080` |
-| `JWT_SECRET` | Длинная случайная строка: `openssl rand -hex 32` |
-| `PUBLIC_ORIGIN` | Публичный адрес сайта, напр. `https://kvalify.ru` |
+| `JWT_SECRET` | Случайная строка: `openssl rand -hex 32` |
 | `DATABASE_URL` | `postgres://kvalify:СЛОЖНЫЙ_ПАРОЛЬ@localhost:5432/kvalify` |
 | `POLZA_API_KEY` | Ключ из polza.ai/dashboard |
+| `PUBLIC_ORIGIN` | `https://qvalify.ru` |
+| `UPLOAD_DIR` | `/var/www/quiz/uploads` |
+| `PORT` | `8080` (по умолчанию) |
 | `POLZA_BASE_URL` | `https://polza.ai/api/v1` |
 | `LLM_MODEL_FAST` / `LLM_MODEL_SMART` | ID моделей из каталога polza.ai/models |
 
 ### 4. systemd: API и воркер
 
 ```bash
-cat > /etc/systemd/system/kvalify-api.service <<'EOF'
+cat > /etc/systemd/system/qvalify-api.service <<'EOF'
 [Unit]
-Description=Kvalify API
+Description=Qvalify API
 After=network.target postgresql.service
-
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/kvalify/api
+WorkingDirectory=/var/www/quiz/api
 ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=3
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/kvalify-worker.service <<'EOF'
+cat > /etc/systemd/system/qvalify-worker.service <<'EOF'
 [Unit]
-Description=Kvalify scoring worker
+Description=Qvalify scoring worker
 After=network.target postgresql.service
-
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/kvalify/api
+WorkingDirectory=/var/www/quiz/api
 ExecStart=/usr/bin/node dist/worker.js
 Restart=always
 RestartSec=5
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
-chown -R www-data:www-data /opt/kvalify
 systemctl daemon-reload
-systemctl enable --now kvalify-api kvalify-worker
-systemctl status kvalify-api --no-pager   # должно быть active (running)
+systemctl enable --now qvalify-api qvalify-worker
+systemctl status qvalify-api --no-pager   # active (running)
 ```
 
 ### 5. nginx
 
-Один домен раздаёт всё: админку (SPA), API, страницы квизов и виджет.
+Один домен раздаёт всё: админку (SPA), API, страницы квизов, SEO-галерею, загруженные картинки и виджет.
 
 ```bash
-cat > /etc/nginx/sites-available/kvalify <<'EOF'
+cat > /etc/nginx/sites-available/qvalify <<'EOF'
 server {
     listen 80;
-    server_name kvalify.ru;   # замените на свой домен
+    server_name qvalify.ru;
 
     # Админка (SPA)
-    root /opt/kvalify/admin/dist;
+    root /var/www/quiz/admin/dist;
     index index.html;
     location / {
         try_files $uri /index.html;
     }
 
-    # API
+    # API (генерация квиза может занимать до ~20 с)
     location /api/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;   # генерация квиза занимает до ~20 с
+        proxy_read_timeout 60s;
+        client_max_body_size 6m;      # загрузка картинок до 5 МБ
     }
 
-    # Страница квиза по прямой ссылке /q/... (рендерит API)
-    location /q/ {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+    # Страница квиза /q/... и SEO-галерея /kviz-dlya... (рендерит API)
+    location /q/         { proxy_pass http://127.0.0.1:8080; proxy_set_header Host $host; }
+    location /kviz-dlya  { proxy_pass http://127.0.0.1:8080; proxy_set_header Host $host; }
+
+    # Загруженные картинки — отдаёт nginx напрямую
+    location /uploads/ {
+        alias /var/www/quiz/uploads/;
+        add_header Cache-Control "public, max-age=2592000";
     }
 
-    # Виджет — статика с кэшем
+    # Виджет — статика с кэшем и открытым CORS (грузится с чужих сайтов)
     location /widget/ {
-        alias /opt/kvalify/widget/dist/;
+        alias /var/www/quiz/widget/dist/;
         add_header Cache-Control "public, max-age=3600";
         add_header Access-Control-Allow-Origin "*";
     }
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/kvalify /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/qvalify /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 ```
@@ -204,7 +211,7 @@ nginx -t && systemctl reload nginx
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx -d kvalify.ru
+certbot --nginx -d qvalify.ru
 ```
 
 Certbot сам перепишет конфиг на HTTPS и настроит автопродление.
@@ -212,24 +219,21 @@ Certbot сам перепишет конфиг на HTTPS и настроит а
 ### 7. Проверка
 
 ```bash
-curl -s https://kvalify.ru/api/health           # {"ok":true}
-
-# Регистрация → токен
-curl -s https://kvalify.ru/api/auth/register -H 'content-type: application/json' \
-  -d '{"email":"test@example.com","password":"password123"}'
+curl -s https://qvalify.ru/api/health     # {"ok":true}
+curl -s https://qvalify.ru/kviz-dlya | head -c 40   # HTML галереи
 ```
 
-Дальше — в браузере: регистрация в админке → «Создать квиз с ИИ» → опубликовать → вкладка «Публикация» даст embed-код, ссылку `/q/...` и QR.
+Дальше — в браузере: `https://qvalify.ru` → регистрация → «Создать квиз с ИИ» → опубликовать → вкладка «Публикация» даст embed-код, ссылку `/q/...` и QR. SEO-галерея ниш — на `https://qvalify.ru/kviz-dlya`.
 
 ### Обновление версии
 
 ```bash
-cd /opt/kvalify && git pull
+cd /var/www/quiz && git pull
 cd api && npm ci && npm run migrate && npm run build
 cd ../widget && npm ci && npm run build
 cd ../admin  && npm ci && npm run build
-chown -R www-data:www-data /opt/kvalify
-systemctl restart kvalify-api kvalify-worker
+chown -R www-data:www-data /var/www/quiz
+systemctl restart qvalify-api qvalify-worker
 ```
 
 ---
@@ -241,16 +245,16 @@ systemctl restart kvalify-api kvalify-worker
 ```html
 <!-- Встроенный блок -->
 <div id="kvalify-quiz"></div>
-<script src="https://kvalify.ru/widget/kvalify-widget.js"
+<script src="https://qvalify.ru/widget/kvalify-widget.js"
         data-quiz-id="UUID" data-mode="inline" data-target="#kvalify-quiz" defer></script>
 
 <!-- Попап с плавающей кнопкой -->
-<script src="https://kvalify.ru/widget/kvalify-widget.js"
+<script src="https://qvalify.ru/widget/kvalify-widget.js"
         data-quiz-id="UUID" data-mode="popup" data-button-text="Пройти квиз" defer></script>
 
 <!-- Открытие по своей кнопке -->
 <button data-kvalify-open>Подобрать решение</button>
-<script src="https://kvalify.ru/widget/kvalify-widget.js"
+<script src="https://qvalify.ru/widget/kvalify-widget.js"
         data-quiz-id="UUID" data-mode="button" defer></script>
 ```
 

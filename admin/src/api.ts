@@ -36,6 +36,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+export async function uploadImage(file: File): Promise<string> {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/uploads', {
+    method: 'POST',
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError((data as { error?: string }).error ?? 'Не удалось загрузить', res.status);
+  return (data as { url: string }).url;
+}
+
 export const api = {
   register: (email: string, password: string) =>
     request<{ token: string }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),

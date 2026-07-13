@@ -195,7 +195,7 @@ export function QuizApp({ quizId, onClose }: { quizId: string; onClose?: () => v
 
       <div class="kv-footer">
         <span class="kv-footer-made">Сделано на</span>
-        <a class="kv-footer-brand" href="https://kvalify.ru?utm_source=widget" target="_blank" rel="noopener">
+        <a class="kv-footer-brand" href="https://qvalify.ru?utm_source=widget" target="_blank" rel="noopener">
           <span class="kv-footer-mark" />Квалифай
         </a>
       </div>
@@ -403,7 +403,7 @@ function ContactScreen({ meta, onSubmit }: {
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
   const [tried, setTried] = useState(false);
-  const privacyUrl = meta.design?.privacy_url || 'https://kvalify.ru/privacy';
+  const privacyUrl = meta.design?.privacy_url || 'https://qvalify.ru/privacy';
 
   const eName = tried && fields.includes('name') && name.trim().length < 2 ? 'Введите имя' : '';
   const ePhone = tried && fields.includes('phone') && phoneDigits(phone).length < 10 ? 'Введите телефон полностью' : '';

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, ApiError } from '../api';
 import type { QuestionDraft, QuestionType, QuizFull } from '../types';
 import { Button, Icon, icons, inputCls, Spinner, Toggle, useToast } from '../ui';
+import { ImageInput } from './ImageInput';
 
 const typeOptions: { id: QuestionType; label: string; hasOptions: boolean; hasImg?: boolean }[] = [
   { id: 'single', label: 'Один вариант', hasOptions: true },
@@ -140,7 +141,7 @@ export function QuestionsEditor({ quiz, mode, onSwitchMode, onSaved }: {
                     )}
                     <div className="min-w-0 flex-1"><input className={inputCls} placeholder={`Вариант ${oi + 1}`} value={o.label} onChange={(e) => setOption(i, oi, { label: e.target.value })} /></div>
                     {meta.hasImg && (
-                      <div className="w-44 flex-none"><input className={inputCls} placeholder="Ссылка на фото" value={o.img ?? ''} onChange={(e) => setOption(i, oi, { img: e.target.value })} /></div>
+                      <div className="w-56 flex-none"><ImageInput compact value={o.img} onChange={(url) => setOption(i, oi, { img: url })} /></div>
                     )}
                     <button onClick={() => removeOption(i, oi)} className="grid h-8 w-8 flex-none place-items-center rounded-[9px] text-faint transition-colors hover:bg-line-2 hover:text-muted" aria-label="Убрать вариант">✕</button>
                   </div>

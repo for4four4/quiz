@@ -6,6 +6,7 @@ import type { CardStyle, QuizDesign, QuizFull } from '../types';
 import { WidgetPreview } from '../components/WidgetPreview';
 import { AnalyticsTab } from '../components/AnalyticsTab';
 import { QuestionsEditor } from '../components/QuestionsEditor';
+import { ImageInput } from '../components/ImageInput';
 import { Button, Field, Icon, icons, inputCls, Spinner, StatusChip, useToast } from '../ui';
 
 type Tab = 'questions' | 'brief' | 'design' | 'analytics' | 'settings' | 'publish';
@@ -211,8 +212,8 @@ function DesignTab({ quiz, saving, onSave }: { quiz: QuizFull; saving: boolean; 
           </div>
           {d.card_style === 'photo' && (
             <div className="mt-4">
-              <Field label="Ссылка на фото объекта" hint="Прямая ссылка на изображение (JPG/PNG), которое покажется на обложке">
-                <input className={inputCls} placeholder="https://…/photo.jpg" value={d.hero_image ?? ''} onChange={(e) => set({ hero_image: e.target.value })} />
+              <Field label="Фото объекта для обложки" hint="Загрузите файл или вставьте ссылку — покажется на обложке квиза">
+                <ImageInput value={d.hero_image} onChange={(url) => set({ hero_image: url })} />
               </Field>
             </div>
           )}
@@ -325,7 +326,7 @@ function PublishTab({ quiz, onSlug }: { quiz: QuizFull; onSlug: (slug: string) =
         <Field label="Адрес квиза (слаг)">
           <div className="flex items-center gap-2">
             <div className={`${inputCls} flex items-center gap-0.5`}>
-              <span className="text-muted">kvalify.ru/q/</span>
+              <span className="text-muted">{window.location.host}/q/</span>
               <input className="min-w-0 flex-1 bg-transparent font-bold outline-none" placeholder="moy-kviz"
                 value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} />
             </div>

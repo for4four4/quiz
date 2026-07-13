@@ -11,6 +11,7 @@ export const config = {
   jwtSecret: required('JWT_SECRET'),
   databaseUrl: required('DATABASE_URL'),
   publicOrigin: process.env.PUBLIC_ORIGIN ?? 'http://localhost:8080',
+  uploadDir: process.env.UPLOAD_DIR ?? 'uploads', // куда сохранять загруженные картинки
   polza: {
     apiKey: required('POLZA_API_KEY'),
     baseUrl: process.env.POLZA_BASE_URL ?? 'https://polza.ai/api/v1',
