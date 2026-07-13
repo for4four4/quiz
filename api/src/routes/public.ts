@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { one, q } from '../db.js';
 import { nextAdaptiveStep, personalResult } from '../services/ai.js';
-import { looksLikeGibberish } from '../services/antifraud.js';
 
 /**
  * Публичные эндпоинты для виджета (без авторизации, CORS открыт).
@@ -39,18 +38,28 @@ async function loadPublishedQuiz(quizId: string): Promise<QuizRow | null> {
   );
 }
 
-/** Фолбэк на скелет вопросов: LLM недоступен/медленный или static-режим. */
-async function skeletonQuestion(quizId: string, position: number) {
-  const row = await one<{ title: string; type: string; options: { label: string }[] }>(
+type WidgetOption = { label: string; img?: string };
+type WidgetQuestion = { title: string; type: 'single' | 'multi' | 'image' | 'slider' | 'text'; options: WidgetOption[] };
+
+/** Фолбэк на скелет вопросов: LLM недоступен/медленный или static-режим.
+ *  Опции отдаём как {label, img?} — так работает тип «выбор с картинками». */
+async function skeletonQuestion(quizId: string, position: number): Promise<WidgetQuestion | null> {
+  const row = await one<{ title: string; type: string; options: WidgetOption[] }>(
     'SELECT title, type, options FROM questions WHERE quiz_id = $1 AND position = $2',
     [quizId, position],
   );
   if (!row) return null;
   return {
     title: row.title,
-    type: row.type as 'single' | 'multi' | 'text',
-    options: (row.options ?? []).map((o) => o.label),
+    type: row.type as WidgetQuestion['type'],
+    options: (row.options ?? []).map((o) => (o.img ? { label: o.label, img: o.img } : { label: o.label })),
   };
+}
+
+/** Вопрос от LLM (адаптивный режим) — опции приходят строками, приводим к {label}. */
+function normalizeAdaptive(q: { title: string; type: string; options: string[] } | null): WidgetQuestion | null {
+  if (!q) return null;
+  return { title: q.title, type: q.type as WidgetQuestion['type'], options: (q.options ?? []).map((label) => ({ label })) };
 }
 
 export async function publicRoutes(app: FastifyInstance) {
@@ -184,9 +193,11 @@ export async function publicRoutes(app: FastifyInstance) {
 
     // Адаптивный режим: промпт 2 (Haiku) с фолбэком на скелет по таймауту 4с
     const goals = (quiz.business_context.qualification_goals as string[]) ?? [];
-    let step: Awaited<ReturnType<typeof nextAdaptiveStep>>;
+    let action: 'ask' | 'finish';
+    let goalsStatus: Record<string, 'closed' | 'open'>;
+    let nextQuestion: WidgetQuestion | null;
     try {
-      step = await Promise.race([
+      const step = await Promise.race([
         nextAdaptiveStep({
           business_context: quiz.business_context,
           qualification_goals: goals,
@@ -196,24 +207,24 @@ export async function publicRoutes(app: FastifyInstance) {
         }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error('llm_timeout')), 4000)),
       ]);
+      action = step.action;
+      goalsStatus = step.goals_status;
+      nextQuestion = normalizeAdaptive(step.question);
     } catch {
-      const fallback = await skeletonQuestion(quiz.id, askedCount);
-      step = {
-        action: fallback && askedCount < maxQuestions ? 'ask' : 'finish',
-        question: fallback,
-        flag: typeof answer === 'string' && looksLikeGibberish(answer) ? 'gibberish' : null,
-        goals_status: session.goals_status,
-      };
+      // Фолбэк на скелет: опции с картинками сохраняются как есть
+      nextQuestion = await skeletonQuestion(quiz.id, askedCount);
+      action = nextQuestion && askedCount < maxQuestions ? 'ask' : 'finish';
+      goalsStatus = session.goals_status;
     }
 
     // goals_status сохраняем в сессию — модель «не забывает» прогресс между вызовами
     await q('UPDATE sessions SET transcript = $2, goals_status = $3 WHERE id = $1',
-      [session.id, JSON.stringify(transcript), JSON.stringify(step.goals_status ?? {})]);
+      [session.id, JSON.stringify(transcript), JSON.stringify(goalsStatus ?? {})]);
 
-    if (step.action === 'finish' || askedCount >= maxQuestions) {
+    if (action === 'finish' || askedCount >= maxQuestions) {
       return { action: 'finish' };
     }
-    return { action: 'ask', question: step.question };
+    return { action: 'ask', question: nextQuestion };
   });
 
   // Отправка контактов → лид + фоновая задача скоринга

@@ -297,12 +297,13 @@ function QuestionScreen({ entry, onAnswer }: {
   const hint = q.type === 'multi' ? 'Можно выбрать несколько'
     : q.type === 'text' ? 'Пара слов — по желанию'
     : q.type === 'slider' ? 'Двигайте ползунок'
+    : q.type === 'image' ? 'Выберите картинку'
     : 'Выберите один вариант';
 
-  const pickSingle = (opt: string) => {
+  const pickSingle = (label: string) => {
     if (picked) return;
-    setPicked(opt);
-    setTimeout(() => onAnswer(opt), 200);
+    setPicked(label);
+    setTimeout(() => onAnswer(label), 200);
   };
 
   return (
@@ -313,11 +314,30 @@ function QuestionScreen({ entry, onAnswer }: {
       {q.type === 'single' && (
         <div class="kv-opts">
           {q.options.map((opt, i) => (
-            <button key={opt} class={`kv-opt${picked === opt ? ' on' : ''}`} onClick={() => pickSingle(opt)}>
+            <button key={opt.label} class={`kv-opt${picked === opt.label ? ' on' : ''}`} onClick={() => pickSingle(opt.label)}>
               <span class="kv-badge">{LETTERS[i] ?? i + 1}</span>
-              <span class="kv-opt-text"><span class="kv-opt-label">{opt}</span></span>
+              <span class="kv-opt-text"><span class="kv-opt-label">{opt.label}</span></span>
             </button>
           ))}
+        </div>
+      )}
+
+      {q.type === 'image' && (
+        <div class="kv-img-grid">
+          {q.options.map((opt) => {
+            const on = picked === opt.label;
+            return (
+              <button key={opt.label} class={`kv-img-opt${on ? ' on' : ''}`} onClick={() => pickSingle(opt.label)}>
+                {opt.img
+                  ? <img src={opt.img} alt={opt.label} loading="lazy" />
+                  : <span style={{ aspectRatio: '4/3', display: 'grid', placeItems: 'center', background: 'var(--kv-tint)', color: 'var(--kv-muted)', fontSize: '12px' }}>нет фото</span>}
+                <span class="kv-img-cap">
+                  <span class="kv-img-cap-text">{opt.label}</span>
+                  <span class="kv-tick">{on && <ICheck s={12} />}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -325,12 +345,12 @@ function QuestionScreen({ entry, onAnswer }: {
         <>
           <div class="kv-opts">
             {q.options.map((opt) => {
-              const on = multi.includes(opt);
+              const on = multi.includes(opt.label);
               return (
-                <button key={opt} class={`kv-opt${on ? ' on' : ''}`}
-                  onClick={() => setMulti(on ? multi.filter((o) => o !== opt) : [...multi, opt])}>
+                <button key={opt.label} class={`kv-opt${on ? ' on' : ''}`}
+                  onClick={() => setMulti(on ? multi.filter((o) => o !== opt.label) : [...multi, opt.label])}>
                   <span class="kv-badge kv-check">{on && <ICheck />}</span>
-                  <span class="kv-opt-text"><span class="kv-opt-label">{opt}</span></span>
+                  <span class="kv-opt-text"><span class="kv-opt-label">{opt.label}</span></span>
                 </button>
               );
             })}

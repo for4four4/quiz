@@ -1,7 +1,12 @@
+export interface QuestionOption {
+  label: string;
+  img?: string;
+}
+
 export interface Question {
   title: string;
-  type: 'single' | 'multi' | 'slider' | 'text';
-  options: string[];
+  type: 'single' | 'multi' | 'image' | 'slider' | 'text';
+  options: QuestionOption[];
 }
 
 export interface OfferPage {
