@@ -1,0 +1,321 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Qvalify design tokens
+   ============================================================ */
+@theme {
+  --color-bg: #e8edf6;
+  --color-bg-2: #dfe7f3;
+  --color-bg-3: #e4eaf5;
+  --color-navy: #0f1f3c;
+  --color-brand: #28559c;
+  --color-brand-dark: #1e437d;
+  --color-brand-soft: #8fb4ea;
+  --color-ink: #111827;
+  --color-muted: #4b5563;
+  --color-muted-2: #6b7280;
+  --color-muted-3: #9ca3af;
+  --color-line: #e5e7eb;
+  --color-line-2: #f0f0f0;
+  --color-success: #166534;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #e8edf6;
+  font-family: var(--font-sans);
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: #111827;
+  text-decoration: none;
+}
+
+/* ============================================================
+   Hero background drift blobs
+   ============================================================ */
+@keyframes qvDrift1 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(28vw, 10vh) scale(1.25); }
+  66% { transform: translate(10vw, -14vh) scale(0.9); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes qvDrift2 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-24vw, 18vh) scale(1.2); }
+  66% { transform: translate(-8vw, -10vh) scale(1.05); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes qvDrift3 {
+  0% { transform: translate(0, 0) scale(1.1); }
+  50% { transform: translate(16vw, -22vh) scale(0.85); }
+  100% { transform: translate(0, 0) scale(1.1); }
+}
+@keyframes qvDrift4 {
+  0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  50% { transform: translate(-14vw, -12vh) rotate(40deg) scale(1.3); }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+@keyframes qvPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ============================================================
+   Micro-interactions
+   ============================================================ */
+/* Rolling text label on hover */
+.qv-roll {
+  overflow: hidden;
+  display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.qv-roll span {
+  white-space: nowrap;
+}
+.qv-roll-col {
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.qv-roll-col > span {
+  display: block;
+  height: 20px;
+  line-height: 20px;
+}
+.qv-roll:hover .qv-roll-col,
+.qv-grp:hover .qv-roll-col {
+  transform: translateY(-20px);
+}
+
+/* Scroll reveal */
+.qv-reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.qv-reveal.qv-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Card lift */
+.qv-lift {
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+.qv-lift:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 48px rgba(13, 32, 68, 0.14);
+}
+
+/* Example card lift (slightly stronger shadow) */
+.qv-card {
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+.qv-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 24px 56px rgba(13, 32, 68, 0.16);
+}
+
+/* News + review card lift */
+.qv-news,
+.qv-rev {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.qv-news:hover,
+.qv-rev:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 48px rgba(13, 32, 68, 0.14);
+}
+
+/* Arrow rotate */
+.qv-arr {
+  transition: transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.qv-grp:hover .qv-arr {
+  transform: rotate(-45deg);
+}
+
+/* ============================================================
+   Hero demo animation (auto-playing quiz preview)
+   ============================================================ */
+@keyframes qvDemoCur {
+  0% { opacity: 0; transform: translate(-180px, -160px); }
+  8% { opacity: 1; }
+  20% { transform: translate(0, 0) scale(1); }
+  23% { transform: translate(0, 0) scale(0.72); }
+  27% { transform: translate(0, 0) scale(1); opacity: 1; }
+  34%, 100% { opacity: 0; transform: translate(0, 0); }
+}
+@keyframes qvDemoBtn {
+  0%, 20% { transform: scale(1); }
+  23% { transform: scale(0.9); }
+  26%, 100% { transform: scale(1); }
+}
+@keyframes qvDemoDim {
+  0%, 25% { opacity: 0; }
+  31%, 88% { opacity: 1; }
+  95%, 100% { opacity: 0; }
+}
+@keyframes qvDemoCard {
+  0%, 25% { opacity: 0; transform: translateY(26px) scale(0.92); }
+  32%, 88% { opacity: 1; transform: translateY(0) scale(1); }
+  95%, 100% { opacity: 0; transform: translateY(10px) scale(0.96); }
+}
+@keyframes qvDemoS1 {
+  0%, 52% { opacity: 1; transform: translateX(0); }
+  57%, 100% { opacity: 0; transform: translateX(-26px); }
+}
+@keyframes qvDemoS2 {
+  0%, 54% { opacity: 0; transform: translateX(26px); }
+  59%, 76% { opacity: 1; transform: translateX(0); }
+  81%, 100% { opacity: 0; transform: translateX(-26px); }
+}
+@keyframes qvDemoS3 {
+  0%, 80% { opacity: 0; transform: scale(0.9); }
+  86%, 100% { opacity: 1; transform: scale(1); }
+}
+@keyframes qvDemoOpt {
+  0%, 42% { border-color: #e5e7eb; background: #ffffff; }
+  47%, 100% { border-color: #28559c; background: rgba(40, 85, 156, 0.06); }
+}
+@keyframes qvDemoProg {
+  0%, 32% { width: 12%; }
+  52% { width: 45%; }
+  62% { width: 80%; }
+  84%, 100% { width: 100%; }
+}
+
+/* ============================================================
+   Card button expand-on-hover (nav "Создать квиз")
+   ============================================================ */
+.qv-card-btn {
+  transition: width 0.3s ease-in-out;
+}
+.qv-grp:hover .qv-card-btn {
+  width: 168px;
+}
+.qv-card-lbl {
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out 0.1s;
+  white-space: nowrap;
+}
+.qv-grp:hover .qv-card-lbl {
+  opacity: 1;
+}
+
+/* ============================================================
+   Responsive helpers (mirror prototype media queries)
+   ============================================================ */
+@media (max-width: 960px) {
+  .qv-nav-links { display: none !important; }
+}
+@media (max-width: 1260px) {
+  .qv-promo { display: none !important; }
+}
+@media (max-width: 760px) {
+  .qv-hide-sm { display: none !important; }
+}
+@media (max-width: 1080px) {
+  .qv-hero-grid { grid-template-columns: 1fr !important; }
+  .qv-hero-demo { display: none !important; }
+}
+@media (max-width: 860px) {
+  .qv-editor-grid { grid-template-columns: 1fr !important; }
+  .qv-editor-panel {
+    border-left: none !important;
+    border-top: 1px solid #f0f0f0;
+  }
+}
+@media (max-width: 960px) {
+  .qv-doc-grid { grid-template-columns: 1fr !important; }
+  .qv-doc-side { position: static !important; }
+}
+
+/* ---- Client cabinet ---- */
+.qv-kanban-card {
+  transition: box-shadow 0.2s ease;
+}
+.qv-kanban-card:hover {
+  box-shadow: 0 6px 20px rgba(17, 24, 39, 0.1);
+}
+@media (max-width: 760px) {
+  .qv-anal-grid { grid-template-columns: 1fr !important; }
+}
+/* планшет: сайдбар — узкая иконочная колонка */
+@media (max-width: 900px) {
+  .kc-side { width: 64px !important; }
+  .kc-side .kc-label { display: none !important; }
+  .kc-side .kc-navitem {
+    justify-content: center !important;
+    gap: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .kc-side .kc-usage { display: none !important; }
+  .kc-side .kc-profile { justify-content: center !important; }
+  .kc-main { padding: 20px 16px !important; }
+}
+/* телефон: сайдбар прячется, шапка с кнопкой-меню */
+@media (max-width: 640px) {
+  .kc-shell { flex-direction: column !important; }
+  .kc-side {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    height: 100vh !important;
+    z-index: 70;
+    width: 220px !important;
+    transform: translateX(-105%);
+    transition: transform 0.28s ease;
+    box-shadow: 0 0 40px rgba(17, 24, 39, 0.18);
+  }
+  .kc-side.kc-open { transform: translateX(0); }
+  .kc-side .kc-label { display: block !important; }
+  .kc-side .kc-navitem {
+    justify-content: flex-start !important;
+    gap: 11px !important;
+    padding: 10px 12px !important;
+  }
+  .kc-side .kc-usage { display: block !important; }
+  .kc-side .kc-profile { justify-content: flex-start !important; }
+  .kc-topbar { display: flex !important; }
+  .kc-scrim { display: block !important; }
+}
+
+/* ============================================================
+   Quiz editor animations
+   ============================================================ */
+@keyframes qvAFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes qvASlideL { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: none; } }
+@keyframes qvASlideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+@keyframes qvAZoom { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
+@keyframes qvAFlip { from { opacity: 0; transform: perspective(700px) rotateY(28deg); } to { opacity: 1; transform: none; } }
+
+/* slide-animation preview chips (hover to play) */
+.qv-slideanim:hover span span {
+  animation-name: var(--sa);
+  animation-duration: 0.55s;
+  animation-timing-function: ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
