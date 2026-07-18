@@ -1,0 +1,49 @@
+# Квалифай — весь стек одной командой:
+#   docker compose up --build
+# Приложение: http://localhost:3000 · PostgreSQL: localhost:5432
+#
+# Секреты не хранятся в репозитории — задайте их в .env рядом с этим файлом
+# (docker compose подхватывает .env автоматически). Пример — в .env.example.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kvalify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kvalify}
+      POSTGRES_DB: ${POSTGRES_DB:-kvalify}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Схема применяется при первой инициализации пустой БД
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kvalify} -d ${POSTGRES_DB:-kvalify}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-kvalify}:${POSTGRES_PASSWORD:-kvalify}@db:5432/${POSTGRES_DB:-kvalify}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      POLZA_API_KEY: ${POLZA_API_KEY:-}
+      POLZA_BASE_URL: ${POLZA_BASE_URL:-https://polza.ai/api/v1}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-anthropic/claude-haiku-4.5}
+      LLM_MODEL_SMART: ${LLM_MODEL_SMART:-anthropic/claude-sonnet-4.6}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      VK_TOKEN: ${VK_TOKEN:-}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
