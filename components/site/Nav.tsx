@@ -5,10 +5,27 @@ import { MoscowClock } from "../util/MoscowClock";
 import { navLinks, routes } from "@/lib/nav";
 
 /**
- * Floating white pill navigation. Rendered at the top of every marketing page.
- * `promo` is the small left-of-clock line ("Подключаем клиентов в июле 2026").
+ * Floating white pill navigation.
+ *
+ * - `variant="hero"` (default): full bar with promo line + Moscow clock, used
+ *   on the landing hero over the animated background.
+ * - `variant="inner"`: compact bar for the marketing sub-pages; the active
+ *   link renders as static accent text instead of a roll link.
  */
-export function Nav({ promo = "Подключаем клиентов в июле 2026" }: { promo?: string }) {
+export function Nav({
+  variant = "hero",
+  active,
+  clock = true,
+  promo = "Подключаем клиентов в июле 2026",
+}: {
+  variant?: "hero" | "inner";
+  active?: string;
+  clock?: boolean;
+  promo?: string;
+}) {
+  const inner = variant === "inner";
+  const showClock = !inner || clock;
+
   return (
     <div
       style={{
@@ -45,54 +62,64 @@ export function Nav({ promo = "Подключаем клиентов в июле
               flexShrink: 0,
             }}
           >
-            {navLinks.map((l) => (
-              <RollLink key={l.href} href={l.href} style={{ height: 20 }}>
-                {l.label}
-              </RollLink>
-            ))}
+            {navLinks.map((l) =>
+              active === l.href ? (
+                <span key={l.href} style={{ fontWeight: 600, color: "#28559c" }}>
+                  {l.label}
+                </span>
+              ) : (
+                <RollLink key={l.href} href={l.href} style={{ height: 20 }}>
+                  {l.label}
+                </RollLink>
+              )
+            )}
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 20, minWidth: 0 }}>
-          <div
-            className="qv-promo"
-            style={{
-              fontSize: 13,
-              color: "#4b5563",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              minWidth: 0,
-            }}
-          >
-            {promo}
-          </div>
-          <div
-            className="qv-hide-sm"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 13,
-              color: "#4b5563",
-              flexShrink: 0,
-            }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {!inner && (
+            <div
+              className="qv-promo"
+              style={{
+                fontSize: 13,
+                color: "#4b5563",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+              }}
             >
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            <MoscowClock />
-          </div>
+              {promo}
+            </div>
+          )}
+          {showClock && (
+            <div
+              className="qv-hide-sm"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 13,
+                color: "#4b5563",
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <MoscowClock />
+            </div>
+          )}
           <Link
             href={routes.editor}
             className="qv-grp"

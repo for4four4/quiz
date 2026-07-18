@@ -118,6 +118,26 @@ a {
   box-shadow: 0 20px 48px rgba(13, 32, 68, 0.14);
 }
 
+/* Example card lift (slightly stronger shadow) */
+.qv-card {
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+.qv-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 24px 56px rgba(13, 32, 68, 0.16);
+}
+
+/* News + review card lift */
+.qv-news,
+.qv-rev {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.qv-news:hover,
+.qv-rev:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 48px rgba(13, 32, 68, 0.14);
+}
+
 /* Arrow rotate */
 .qv-arr {
   transition: transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -216,6 +236,10 @@ a {
     border-left: none !important;
     border-top: 1px solid #f0f0f0;
   }
+}
+@media (max-width: 960px) {
+  .qv-doc-grid { grid-template-columns: 1fr !important; }
+  .qv-doc-side { position: static !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
