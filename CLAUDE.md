@@ -14,6 +14,17 @@
 - Next.js 15 (App Router) + React 19 + TypeScript
 - Tailwind CSS v4 — токены и анимации в `app/globals.css`
 - Все стили секций лендинга — инлайн-стили, точно повторяющие прототип
+- Бэкенд — Route Handlers (`app/api/*`) + PostgreSQL (`pg`) + Polza.ai (`openai` SDK)
+
+## Бэкенд
+
+- Серверная логика — в `lib/server/*` (db, auth, llm, prompts, scoring, integrations, env)
+- Схема БД — `db/schema.sql`, применяется идемпотентно через `ensureSchema()`
+- API: `/api/auth`, `/api/ai/generate`, `/api/quizzes[/id]`,
+  `/api/public/quiz/[slug]`, `/api/public/lead`
+- Публичный виджет — `public/embed.js`
+- Route Handlers с `pg`/`jsonwebtoken` требуют `runtime = "nodejs"`
+- Ключи и БД — только через `.env` (см. `.env.example`), в репозиторий не коммитятся
 
 ## Команды
 
