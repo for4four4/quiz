@@ -294,6 +294,22 @@ a {
   .kc-scrim { display: block !important; }
 }
 
+/* ============================================================
+   Quiz editor animations
+   ============================================================ */
+@keyframes qvAFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes qvASlideL { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: none; } }
+@keyframes qvASlideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+@keyframes qvAZoom { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
+@keyframes qvAFlip { from { opacity: 0; transform: perspective(700px) rotateY(28deg); } to { opacity: 1; transform: none; } }
+
+/* slide-animation preview chips (hover to play) */
+.qv-slideanim:hover span span {
+  animation-name: var(--sa);
+  animation-duration: 0.55s;
+  animation-timing-function: ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
