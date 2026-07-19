@@ -361,12 +361,9 @@ button,
   animation-timing-function: ease;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-}
+/* Раньше здесь стоял глобальный «выключатель» анимаций для
+   prefers-reduced-motion: reduce — он гасил ВООБЩЕ ВСЕ анимации и переходы
+   (`!important`) у пользователей с включённым режимом «уменьшить движение».
+   Это и приводило к «нет анимаций вообще». Оставляем анимации включёнными;
+   при желании вернуть уважение к reduced-motion — гасим только бесконечные
+   фоновые лупы (qvDrift/qvPulse/qvDemo), а не hover/переходы/reveal. */
