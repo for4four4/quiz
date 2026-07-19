@@ -38,6 +38,8 @@ export function EditorApp() {
   const [selStep, setSelStep] = useState(0);
   const [selBlock, setSelBlock] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<"content" | "button">("content");
+  const [gridSize, setGridSize] = useState(10);
+  const [snap, setSnap] = useState(true);
   const [hoverStep, setHoverStep] = useState<string | null>(null);
   const [armedDel, setArmedDel] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -149,6 +151,9 @@ export function EditorApp() {
   const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
   const setCard = (patch: Partial<CardCfg>) => { setDoc((d) => ({ ...d, card: { ...withCard(d), ...patch } })); touch(); };
 
+  // Привязка к сетке
+  const snapVal = (v: number) => (snap && gridSize > 0 ? Math.round(v / gridSize) * gridSize : Math.round(v));
+
   // Свободное размещение: перемещение и ресайз блока мышью
   const patchBlockPos = (id: string, patch: Partial<BlockPos>) =>
     setDoc((d) => ({ ...d, steps: d.steps.map((s, i) => (i === selStepRef.current ? { ...s, blocks: s.blocks.map((b) => (b.id === id ? { ...b, pos: { x: 0, y: 0, w: 220, ...(b.pos || {}), ...patch } } : b)) } : s)) }));
@@ -157,7 +162,7 @@ export function EditorApp() {
     const b = doc.steps[selStepRef.current]?.blocks.find((x) => x.id === id);
     const p0 = b?.pos || { x: 0, y: 0, w: 220 };
     const sx = e.clientX, sy = e.clientY;
-    const move = (ev: PointerEvent) => patchBlockPos(id, { x: Math.max(0, Math.round(p0.x + ev.clientX - sx)), y: Math.max(0, Math.round(p0.y + ev.clientY - sy)) });
+    const move = (ev: PointerEvent) => patchBlockPos(id, { x: Math.max(0, snapVal(p0.x + ev.clientX - sx)), y: Math.max(0, snapVal(p0.y + ev.clientY - sy)) });
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
     document.body.style.userSelect = "none";
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
@@ -167,7 +172,7 @@ export function EditorApp() {
     const b = doc.steps[selStepRef.current]?.blocks.find((x) => x.id === id);
     const p0 = b?.pos || { x: 0, y: 0, w: 220 };
     const sx = e.clientX, sy = e.clientY, h0 = p0.h || 120;
-    const move = (ev: PointerEvent) => patchBlockPos(id, { w: Math.max(40, Math.round(p0.w + ev.clientX - sx)), h: Math.max(24, Math.round(h0 + ev.clientY - sy)) });
+    const move = (ev: PointerEvent) => patchBlockPos(id, { w: Math.max(40, snapVal(p0.w + ev.clientX - sx)), h: Math.max(24, snapVal(h0 + ev.clientY - sy)) });
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
     document.body.style.userSelect = "none";
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
@@ -299,19 +304,31 @@ export function EditorApp() {
             const card = withCard(doc);
             const free = step.layout === "free";
             const stageH = free ? Math.max(240, card.minHeight || 480) : undefined;
+            const contentW = card.width - card.padX * 2;
+            const contentH = stageH ? stageH - card.padY * 2 : undefined;
+            const gridBg = free && gridSize > 0
+              ? { backgroundImage: "linear-gradient(rgba(40,85,156,.10) 1px, transparent 1px), linear-gradient(90deg, rgba(40,85,156,.10) 1px, transparent 1px)", backgroundSize: `${gridSize}px ${gridSize}px` }
+              : {};
+            const renderBlock = (b: Block, idx: number) => (
+              <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id} dragging={dragId === b.id}
+                free={free} freeIndex={idx} contentW={contentW}
+                onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
+                onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
+                onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
+                onGrip={free ? beginMove(b.id) : beginDrag("block", b.id)} onResize={beginResize(b.id)} />
+            );
             return (
               <div data-dnd="blocks" onClick={() => setSelBlock(null)}
                 style={{ ...cardBg, borderRadius: card.radius, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: card.width, maxWidth: "100%", padding: `${card.padY}px ${card.padX}px`, boxSizing: "border-box", minHeight: free ? stageH : Math.max(240, card.minHeight || 0) || 300, position: "relative", fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
                 {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
-                {free && <div style={{ position: "absolute", top: 6, left: 8, fontSize: 10, color: "#c4c8cf", pointerEvents: "none" }}>Свободное размещение · тяните блоки</div>}
-                {step.blocks.map((b, idx) => (
-                  <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id} dragging={dragId === b.id}
-                    free={free} freeIndex={idx} contentW={card.width - card.padX * 2}
-                    onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
-                    onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
-                    onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
-                    onGrip={free ? beginMove(b.id) : beginDrag("block", b.id)} onResize={beginResize(b.id)} />
-                ))}
+                {free ? (
+                  <div style={{ position: "relative", height: contentH, ...gridBg }}>
+                    <div style={{ position: "absolute", top: -18, left: 0, fontSize: 10, color: "#9ca3af", pointerEvents: "none" }}>Свободное размещение{snap && gridSize > 0 ? ` · сетка ${gridSize}px` : ""}</div>
+                    {step.blocks.map(renderBlock)}
+                  </div>
+                ) : (
+                  step.blocks.map(renderBlock)
+                )}
               </div>
             );
           })()}
@@ -326,6 +343,7 @@ export function EditorApp() {
               onUp={() => moveBlock(block.id, -1)} onDown={() => moveBlock(block.id, 1)} />
           ) : (
             <StepInspector step={step} theme={doc.theme} card={withCard(doc)} setStepField={setStepField} setStepBg={setStepBg} setTheme={setTheme} setCard={setCard}
+              gridSize={gridSize} setGridSize={setGridSize} snap={snap} setSnap={setSnap}
               onDeleteStep={() => deleteStep(selStep)} canDelete={doc.steps.length > 1 && step.kind === "question"} />
           )}
         </div>
@@ -505,12 +523,13 @@ function OptionsEditor({ options, targets, steps, onChange, onTargets }: {
 }
 
 /* ── step inspector ─────────────────────────────────────── */
-function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, onDeleteStep, canDelete }: {
+function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, gridSize, setGridSize, snap, setSnap, onDeleteStep, canDelete }: {
   step: Step; theme: QuizDoc["theme"]; card: CardCfg;
   setStepField: <K extends keyof Step>(k: K, v: Step[K]) => void;
   setStepBg: (p: Partial<Step["bg"]>) => void;
   setTheme: (p: Partial<QuizDoc["theme"]>) => void;
   setCard: (p: Partial<CardCfg>) => void;
+  gridSize: number; setGridSize: (v: number) => void; snap: boolean; setSnap: (v: boolean) => void;
   onDeleteStep: () => void; canDelete: boolean;
 }) {
   const free = step.layout === "free";
@@ -535,6 +554,15 @@ function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, s
           <Toggle on={free} onClick={() => setStepField("layout", free ? "flow" : "free")} />
         </div>
         <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>{free ? "Блоки двигаются и меняют размер мышью. Задайте мин. высоту окна выше." : "Блоки идут в столбик сверху вниз."}</div>
+        {free && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: "#374151" }}>Привязка к сетке</span>
+              <Toggle on={snap} onClick={() => setSnap(!snap)} />
+            </div>
+            <Slider label="Шаг сетки" v={gridSize} min={2} max={40} unit="px" onChange={setGridSize} />
+          </>
+        )}
       </Section>
 
       <Section title="Фон шага">
