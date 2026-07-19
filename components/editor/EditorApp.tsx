@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
 import { api } from "@/lib/client/api";
@@ -39,8 +39,58 @@ export function EditorApp() {
   const [dirty, setDirty] = useState(false);
 
   const idRef = useRef<string | null>(null);
-  const dragBlock = useRef<string | null>(null);
-  const dragStep = useRef<number | null>(null);
+  const selStepRef = useRef(selStep);
+  selStepRef.current = selStep;
+  const dragRef = useRef<{ kind: "block" | "step"; id: string; container: HTMLElement } | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  // ── перетаскивание мышью с зажатием (pointer drag) ──────
+  const reorder = <T,>(arr: T[], from: number, to: number): T[] => {
+    const n = [...arr]; const [m] = n.splice(from, 1); n.splice(to, 0, m); return n;
+  };
+  const onDragMove = useCallback((e: PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const items = Array.from(d.container.querySelectorAll("[data-id]")) as HTMLElement[];
+    const ids = items.map((el) => el.getAttribute("data-id") || "");
+    const from = ids.indexOf(d.id);
+    if (from < 0) return;
+    let to = from;
+    items.forEach((el, i) => {
+      if (ids[i] === d.id) return;
+      const r = el.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (i < from && e.clientY < mid) to = Math.min(to, i);
+      if (i > from && e.clientY > mid) to = Math.max(to, i);
+    });
+    if (to === from) return;
+    if (d.kind === "block") {
+      setDoc((doc0) => ({ ...doc0, steps: doc0.steps.map((s, i) => (i === selStepRef.current ? { ...s, blocks: reorder(s.blocks, from, to) } : s)) }));
+    } else {
+      setDoc((doc0) => ({ ...doc0, steps: reorder(doc0.steps, from, to) }));
+      setSelStep(to);
+    }
+    setDirty(true);
+  }, []);
+  const onDragEnd = useCallback(() => {
+    dragRef.current = null;
+    setDragId(null);
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragEnd);
+    document.body.style.userSelect = "";
+  }, [onDragMove]);
+  const beginDrag = useCallback((kind: "block" | "step", id: string) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const container = (e.currentTarget as HTMLElement).closest("[data-dnd]") as HTMLElement | null;
+    if (!container) return;
+    dragRef.current = { kind, id, container };
+    setDragId(id);
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
+  }, [onDragMove, onDragEnd]);
+  useEffect(() => () => { window.removeEventListener("pointermove", onDragMove); window.removeEventListener("pointerup", onDragEnd); }, [onDragMove, onDragEnd]);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
@@ -84,16 +134,6 @@ export function EditorApp() {
     if (to < 0 || to >= s.blocks.length) return s;
     const n = [...s.blocks]; [n[i], n[to]] = [n[to], n[i]]; return { ...s, blocks: n };
   });
-  const dropBlock = (targetId: string) => {
-    const from = dragBlock.current; dragBlock.current = null;
-    if (!from || from === targetId) return;
-    patchStep(selStep, (s) => {
-      const fi = s.blocks.findIndex((b) => b.id === from); const ti = s.blocks.findIndex((b) => b.id === targetId);
-      if (fi < 0 || ti < 0) return s;
-      const n = [...s.blocks]; const [m] = n.splice(fi, 1); n.splice(ti, 0, m); return { ...s, blocks: n };
-    });
-  };
-
   const setStepField = <K extends keyof Step>(k: K, v: Step[K]) => patchStep(selStep, (s) => ({ ...s, [k]: v }));
   const setStepBg = (patch: Partial<Step["bg"]>) => patchStep(selStep, (s) => ({ ...s, bg: { ...s.bg, ...patch } }));
   const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
@@ -109,13 +149,6 @@ export function EditorApp() {
     setDoc((d) => ({ ...d, steps: d.steps.filter((_, i) => i !== si) }));
     setSelStep((cur) => Math.max(0, cur >= si ? cur - 1 : cur)); setSelBlock(null); touch();
   };
-  const dropStep = (to: number) => {
-    const from = dragStep.current; dragStep.current = null;
-    if (from === null || from === to) return;
-    setDoc((d) => { const n = [...d.steps]; const [m] = n.splice(from, 1); n.splice(to, 0, m); return { ...d, steps: n }; });
-    setSelStep(to); touch();
-  };
-
   // ── сохранение ──────────────────────────────────────────
   const persist = async (): Promise<string | null> => {
     setSaving(true);
@@ -171,18 +204,19 @@ export function EditorApp() {
         <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 18 }}>
           <div>
             <div style={panelLabel}>Шаги</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div data-dnd="steps" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {doc.steps.map((s, i) => {
                 const active = selStep === i;
+                const dragging = dragId === s.id;
                 return (
-                  <div key={s.id} onClick={() => { setSelStep(i); setSelBlock(null); }} draggable onDragStart={() => (dragStep.current = i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropStep(i)}
-                    style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "transparent", border: "1px solid " + (active ? "rgba(40,85,156,0.25)" : "transparent") }}>
+                  <div key={s.id} data-id={s.id} onClick={() => { setSelStep(i); setSelBlock(null); }}
+                    style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "#fff", border: "1px solid " + (active ? "rgba(40,85,156,0.25)" : "transparent"), opacity: dragging ? 0.5 : 1, boxShadow: dragging ? "0 8px 24px rgba(17,24,39,0.18)" : "none", transition: "box-shadow .15s ease" }}>
                     <span style={{ width: 22, height: 22, borderRadius: 6, background: active ? "#28559c" : "#f3f4f6", color: active ? "#fff" : "#6b7280", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{s.kind === "cover" ? "◎" : s.kind === "contact" ? "✎" : i}</span>
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: active ? "#28559c" : "#374151" }}>{s.kind === "cover" ? "Обложка" : s.kind === "contact" ? "Контакты" : `Шаг ${i}`}</span>
                       <span style={{ display: "block", fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.blocks.find((b) => b.type === "heading")?.text || s.title}</span>
                     </span>
-                    <span style={{ color: "#c4c8cf", fontSize: 12, cursor: "grab" }}>⠿</span>
+                    <span onPointerDown={beginDrag("step", s.id)} onClick={(e) => e.stopPropagation()} title="Тянуть" style={{ color: "#c4c8cf", fontSize: 13, cursor: "grab", padding: "2px 4px", touchAction: "none" }}>⠿</span>
                   </div>
                 );
               })}
@@ -203,14 +237,14 @@ export function EditorApp() {
 
         {/* Center: canvas */}
         <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "36px 24px" }}>
-          <div onClick={() => setSelBlock(null)} style={{ ...cardBg, borderRadius: 20, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: 460, maxWidth: "100%", padding: 30, boxSizing: "border-box", minHeight: 300, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
+          <div data-dnd="blocks" onClick={() => setSelBlock(null)} style={{ ...cardBg, borderRadius: 20, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: 460, maxWidth: "100%", padding: 30, boxSizing: "border-box", minHeight: 300, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
             {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
             {step.blocks.map((b) => (
-              <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id}
+              <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id} dragging={dragId === b.id}
                 onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
                 onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
                 onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
-                onDragStart={() => (dragBlock.current = b.id)} onDrop={() => dropBlock(b.id)} />
+                onGrip={beginDrag("block", b.id)} />
             ))}
           </div>
         </div>
@@ -232,41 +266,36 @@ export function EditorApp() {
 }
 
 /* ── canvas block ───────────────────────────────────────── */
-function CanvasBlock({ block, accent, selected, onSelect, onText, onOption, onDragStart, onDrop }: {
-  block: Block; accent: string; selected: boolean;
+function CanvasBlock({ block, accent, selected, dragging, onSelect, onText, onOption, onGrip }: {
+  block: Block; accent: string; selected: boolean; dragging: boolean;
   onSelect: (e: React.MouseEvent) => void; onText: (v: string) => void; onOption: (i: number, v: string) => void;
-  onDragStart: () => void; onDrop: () => void;
+  onGrip: (e: React.PointerEvent) => void;
 }) {
   const s = block.style;
-  const outer: CSSProperties = { marginTop: s.marginTop, display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center", outline: selected ? "2px solid #28559c" : "2px solid transparent", outlineOffset: 3, borderRadius: 6, cursor: "pointer" };
   const w = `${s.width}%`;
   const css = blockCss(s) as CSSProperties;
-  const common = { onClick: onSelect, draggable: true, onDragStart, onDragOver: (e: React.DragEvent) => e.preventDefault(), onDrop };
+  const outer: CSSProperties = { position: "relative", marginTop: s.marginTop, outline: selected ? "2px solid #28559c" : "2px solid transparent", outlineOffset: 3, borderRadius: 6, cursor: "pointer", opacity: dragging ? 0.4 : 1, transition: "opacity .12s ease" };
+  const alignWrap: CSSProperties = { display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" };
 
+  let inner: React.ReactNode;
   if (block.type === "heading" || block.type === "text") {
-    return (
-      <div {...common} style={outer}>
-        {selected
-          ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: s.align, border: "1px dashed #28559c", background: "rgba(40,85,156,0.05)", outline: "none" }} />
-          : <div style={{ ...css, width: w, textAlign: s.align, whiteSpace: "pre-wrap" }}>{block.text || "Пустой текст"}</div>}
-      </div>
-    );
-  }
-  if (block.type === "image") {
-    return <div {...common} style={outer}>{block.src ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: s.height || "auto", objectFit: "cover", borderRadius: s.radius }} /> : <div style={{ width: w, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка · задайте URL</div>}</div>;
-  }
-  if (block.type === "html") {
-    return <div {...common} style={outer}><div style={{ width: w, border: "1px dashed #d1d5db", borderRadius: 8, padding: 10, fontSize: 12, fontFamily: "monospace", color: "#6b7280", overflow: "hidden" }}>{"</>"} HTML/JS блок</div></div>;
-  }
-  if (block.type === "button") {
-    return <div {...common} style={outer}>{selected ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: "center", border: "1px dashed #fff", outline: "none" }} /> : <div style={{ ...css, width: w, textAlign: "center" }}>{block.text}</div>}</div>;
-  }
-  if (block.type === "input") {
-    return <div {...common} style={outer}><div style={{ ...css, width: w, color: "#9ca3af" }}>{block.placeholder || "Поле ввода"}</div></div>;
-  }
-  // options
-  return (
-    <div {...common} style={outer}>
+    inner = selected
+      ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: s.align, border: "1px dashed #28559c", background: "rgba(40,85,156,0.05)", outline: "none" }} />
+      : <div style={{ ...css, width: w, textAlign: s.align, whiteSpace: "pre-wrap" }}>{block.text || "Пустой текст"}</div>;
+  } else if (block.type === "image") {
+    inner = block.src
+      ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: s.height || "auto", objectFit: "cover", borderRadius: s.radius }} />
+      : <div style={{ width: w, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка · задайте URL</div>;
+  } else if (block.type === "html") {
+    inner = <div style={{ width: w, border: "1px dashed #d1d5db", borderRadius: 8, padding: 10, fontSize: 12, fontFamily: "monospace", color: "#6b7280", overflow: "hidden" }}>{"</>"} HTML/JS блок</div>;
+  } else if (block.type === "button") {
+    inner = selected
+      ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: "center", border: "1px dashed #fff", outline: "none" }} />
+      : <div style={{ ...css, width: w, textAlign: "center" }}>{block.text}</div>;
+  } else if (block.type === "input") {
+    inner = <div style={{ ...css, width: w, color: "#9ca3af" }}>{block.placeholder || "Поле ввода"}</div>;
+  } else {
+    inner = (
       <div style={{ width: w, display: "flex", flexDirection: "column", gap: 8 }}>
         {(block.options || []).map((o, i) => (
           selected
@@ -274,6 +303,16 @@ function CanvasBlock({ block, accent, selected, onSelect, onText, onOption, onDr
             : <div key={i} style={{ textAlign: "left", border: `1px solid ${s.borderColor || "#e5e7eb"}`, borderRadius: s.radius || 12, padding: "12px 15px", fontSize: s.fontSize, background: "#fff", color: s.color }}>{o}</div>
         ))}
       </div>
+    );
+  }
+
+  return (
+    <div data-id={block.id} onClick={onSelect} style={outer}>
+      {selected && (
+        <span onPointerDown={onGrip} onClick={(e) => e.stopPropagation()} title="Тянуть блок"
+          style={{ position: "absolute", top: -12, left: -6, zIndex: 4, background: accent, color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6, cursor: "grab", userSelect: "none", touchAction: "none", boxShadow: "0 2px 8px rgba(17,24,39,0.2)" }}>⠿ тянуть</span>
+      )}
+      <div style={alignWrap}>{inner}</div>
     </div>
   );
 }

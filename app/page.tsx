@@ -7,18 +7,19 @@ import { IntegrationsSection } from "@/components/landing/IntegrationsSection";
 import { CrmSection } from "@/components/landing/CrmSection";
 import { CtaSection } from "@/components/landing/CtaSection";
 import { Footer } from "@/components/site/Footer";
+import { Reveal } from "@/components/util/Reveal";
 
 export default function HomePage() {
   return (
     <div style={{ background: "#E8EDF6", color: "#111827" }}>
       <Hero />
       <WhySection />
-      <AiSection />
-      <EditorSection />
+      <Reveal><AiSection /></Reveal>
+      <Reveal><EditorSection /></Reveal>
       <HowSection />
-      <IntegrationsSection />
-      <CrmSection />
-      <CtaSection />
+      <Reveal><IntegrationsSection /></Reveal>
+      <Reveal><CrmSection /></Reveal>
+      <Reveal><CtaSection /></Reveal>
       <Footer />
     </div>
   );
