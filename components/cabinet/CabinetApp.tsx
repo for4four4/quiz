@@ -1,21 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { routes } from "@/lib/nav";
-import {
-  bars,
-  columns,
-  crmLeads,
-  crmQuizzes,
-  dropSteps,
-  funnel,
-  integDefs,
-  integList,
-  kpis,
-  navDef,
-  quizzes,
-} from "./data";
+import { api, type Integration, type Lead, type Me, type Quiz } from "@/lib/client/api";
+import { bars, funnel, dropSteps, columns, integDefs, integList, navDef, heat as heatMap } from "./data";
+
+const INTEG_KINDS = ["amocrm", "bitrix24", "telegram", "max", "vk", "webhook", "metrika", "calltracking"];
+const STATUS_ORDER = ["new", "work", "done", "rejected"];
+const GOAL_OPTS = ["Заявки и лиды", "Расчёт стоимости", "Подбор товара", "Опрос клиентов"];
+const BONUS_OPTS = ["Скидка", "Подарок", "Консультация", "Без бонуса"];
+const TONE_OPTS = ["Дружелюбный", "Деловой", "Экспертный"];
 
 const SPARK = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#28559c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,7 +34,6 @@ const widgetTitles: Record<string, string> = {
   hot: "Горячие лиды",
   cr: "Конверсия в заявку",
 };
-const qNames = ["Все квизы", "Подбор кухни", "Шкафы-купе", "Ремонт под ключ"];
 const wTypeDefs: [string, string, string, string][] = [
   ["bars", "▥", "Заявки по дням", "Столбчатый график за период"],
   ["funnel", "▼", "Воронка шагов", "Где люди выходят из квиза"],
@@ -49,7 +44,36 @@ const wTypeDefs: [string, string, string, string][] = [
 
 type Tab = "dash" | "quizzes" | "leads" | "integ" | "settings";
 
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return `сегодня, ${time}`;
+  if (d.toDateString() === yest.toDateString()) return `вчера, ${time}`;
+  return `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}, ${time}`;
+}
+
+function initialsOf(me: Me | null): string {
+  const base = (me?.name || me?.email || "").trim();
+  const parts = base.split(/[\s@._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "К";
+}
+
+function heatOf(h: Lead["heat"]) {
+  return heatMap[h] || heatMap.cold;
+}
+
 export function CabinetApp() {
+  const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [tab, setTab] = useState<Tab>("dash");
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -61,55 +85,164 @@ export function CabinetApp() {
   const [wQuiz, setWQuiz] = useState(0);
   const [wType, setWType] = useState(0);
 
-  const [crmQuiz, setCrmQuiz] = useState<number | null>(null);
+  const [crmQuiz, setCrmQuiz] = useState<string | null>(null);
   const [crmTab, setCrmTab] = useState<"board" | "anal">("board");
-  const [lead, setLead] = useState<number | null>(null);
+  const [leadId, setLeadId] = useState<string | null>(null);
   const [leadTab, setLeadTab] = useState<"overview" | "answers" | "actions">("overview");
 
   const [igIdx, setIgIdx] = useState<number | null>(null);
   const [igVals, setIgVals] = useState<Record<string, string>>({});
   const [igTg, setIgTg] = useState(true);
   const [igTested, setIgTested] = useState(false);
-  const [connected, setConnected] = useState<Record<number, boolean>>({ 0: true, 1: true, 2: true, 6: true });
 
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiPhase, setAiPhase] = useState<"idle" | "busy" | "done">("idle");
-  const [aiGoal, setAiGoal] = useState(1);
+  const [aiPhase, setAiPhase] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [aiBusiness, setAiBusiness] = useState(
+    "Студия кухонь на заказ в Санкт-Петербурге. Средний чек 350 тысяч, срок изготовления 30 дней, бесплатный замер."
+  );
+  const [aiGoal, setAiGoal] = useState(0);
   const [aiBonus, setAiBonus] = useState(0);
   const [aiTone, setAiTone] = useState(0);
   const [aiQn, setAiQn] = useState(5);
   const [aiCalc, setAiCalc] = useState(true);
   const [aiProgress, setAiProgress] = useState(0);
   const [aiStage, setAiStage] = useState("");
+  const [aiError, setAiError] = useState("");
+  const [aiQuiz, setAiQuiz] = useState<Quiz | null>(null);
   const aiTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadData = useCallback(async () => {
+    const [q, l, ig] = await Promise.all([api.quizzes(), api.leads(), api.integrations()]);
+    setQuizzes(q.quizzes);
+    setLeads(l.leads);
+    setIntegrations(ig.integrations);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { user } = await api.me();
+        if (!user) {
+          router.replace(routes.vhod);
+          return;
+        }
+        setMe(user);
+        await loadData();
+      } catch {
+        router.replace(routes.vhod);
+        return;
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [router, loadData]);
 
   useEffect(() => () => { if (aiTimer.current) clearInterval(aiTimer.current); }, []);
 
-  const runAiFlow = () => {
+  const runAiFlow = async () => {
     const stages = ["Изучаем нишу и аудиторию…", "Пишем вопросы и варианты…", "Собираем калькулятор и обложку…"];
     setAiPhase("busy");
+    setAiError("");
     setAiProgress(8);
     setAiStage(stages[0]);
     let i = 0;
     aiTimer.current = setInterval(() => {
-      i++;
-      if (i >= 3) {
-        if (aiTimer.current) clearInterval(aiTimer.current);
-        setAiPhase("done");
-        return;
-      }
+      i = Math.min(i + 1, stages.length - 1);
       setAiStage(stages[i]);
-      setAiProgress(8 + i * 38);
-    }, 1400);
+      setAiProgress((p) => Math.min(92, p + 12));
+    }, 1200);
+    try {
+      const { quiz: gen } = await api.generate({
+        business: aiBusiness,
+        goal: GOAL_OPTS[aiGoal],
+        questions: aiQn,
+        bonus: BONUS_OPTS[aiBonus],
+        tone: TONE_OPTS[aiTone],
+        calc: aiCalc,
+      });
+      const { quiz: saved } = await api.createQuiz({
+        name: gen.name,
+        steps: gen.steps,
+        design: { cover: gen.cover, contactForm: gen.contactForm, calculator: gen.calculator },
+      });
+      if (aiTimer.current) clearInterval(aiTimer.current);
+      setAiProgress(100);
+      setAiQuiz(saved);
+      setAiPhase("done");
+      await loadData();
+    } catch (e) {
+      if (aiTimer.current) clearInterval(aiTimer.current);
+      setAiError(e instanceof Error ? e.message : "Не удалось сгенерировать квиз");
+      setAiPhase("error");
+    }
   };
   const closeAi = () => {
     if (aiTimer.current) clearInterval(aiTimer.current);
     setAiOpen(false);
     setAiPhase("idle");
+    setAiQuiz(null);
   };
 
-  const ld = lead ? crmLeads.find((l) => l.id === lead) ?? null : null;
+  const publishToggle = async (q: Quiz) => {
+    const status = q.status === "active" ? "draft" : "active";
+    await api.updateQuiz(q.id, { status });
+    await loadData();
+  };
+  const removeQuiz = async (q: Quiz) => {
+    if (typeof window !== "undefined" && !window.confirm(`Удалить квиз «${q.name}»? Заявки тоже удалятся.`)) return;
+    await api.deleteQuiz(q.id);
+    await loadData();
+  };
+  const changeLeadStatus = async (id: string, status: string) => {
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
+    try {
+      await api.setLeadStatus(id, status);
+    } catch {
+      await loadData();
+    }
+  };
+
+  const onLogout = async () => {
+    try { await api.logout(); } catch { /* ignore */ }
+    router.replace(routes.vhod);
+    router.refresh();
+  };
+
+  const saveIntegration = async () => {
+    if (igIdx === null) return;
+    const def = integDefs[igIdx];
+    const config: Record<string, string> = {};
+    def.fields.forEach((f) => {
+      const v = igVals[`${igIdx}_${f.id}`];
+      if (v) config[f.id] = v;
+    });
+    config.forwardAnswers = igTg ? "1" : "0";
+    await api.saveIntegration(INTEG_KINDS[igIdx], config);
+    await loadData();
+    setIgIdx(null);
+  };
+  const disconnectIntegration = async (idx: number) => {
+    await api.deleteIntegration(INTEG_KINDS[idx]);
+    await loadData();
+    setIgIdx(null);
+  };
+
+  const connected: Record<number, boolean> = {};
+  integrations.forEach((it) => {
+    const idx = INTEG_KINDS.indexOf(it.kind);
+    if (idx >= 0 && it.enabled) connected[idx] = true;
+  });
+
+  const ld = leadId ? leads.find((l) => l.id === leadId) ?? null : null;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#EFEFEF", color: "#6b7280", fontSize: 14, fontFamily: "-apple-system,Segoe UI,Arial,sans-serif" }}>
+        Загружаем кабинет…
+      </div>
+    );
+  }
 
   return (
     <div className="kc-shell" style={{ display: "flex", minHeight: "100vh", background: "#EFEFEF", color: "#111827" }}>
@@ -133,8 +266,9 @@ export function CabinetApp() {
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.02em" }}><span style={{ color: "#28559c" }}>Ква</span>лифай</div>
         </div>
         <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
-          {navDef.map(([id, label, d, badge]) => {
+          {navDef.map(([id, label, d]) => {
             const active = tab === id;
+            const badge = id === "leads" && leads.length ? String(leads.filter((l) => l.status === "new").length || leads.length) : null;
             return (
               <div key={id} onClick={() => { setTab(id as Tab); setMenuOpen(false); }} className="kc-navitem" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 12, fontSize: 13.5, fontWeight: 500, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "transparent", color: active ? "#28559c" : "#374151", transition: "background .2s" }}>
                 <span style={{ display: "flex", width: 18, height: 18, alignItems: "center", justifyContent: "center" }}><NavIcon d={d} /></span>
@@ -146,15 +280,23 @@ export function CabinetApp() {
         </div>
         <div style={{ marginTop: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="kc-usage" style={{ background: "#F5F5F5", borderRadius: 16, padding: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 8 }}><span style={{ fontWeight: 600 }}>Тариф Про · 300</span><span style={{ color: "#6b7280" }}>212 из 318</span></div>
-            <div style={{ height: 6, background: "#e5e7eb", borderRadius: 9999, overflow: "hidden" }}><div style={{ width: "67%", height: "100%", background: "#28559c", borderRadius: 9999 }} /></div>
-            <div style={{ fontSize: 11.5, color: "#6b7280", marginTop: 8 }}>18 заявок перенесено с июня</div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 8 }}>
+              <span style={{ fontWeight: 600 }}>Тариф {planLabel(me?.plan)}</span>
+              <span style={{ color: "#6b7280" }}>{leads.length} из {me?.leadLimit ?? 0}</span>
+            </div>
+            <div style={{ height: 6, background: "#e5e7eb", borderRadius: 9999, overflow: "hidden" }}>
+              <div style={{ width: `${usagePct(leads.length, me?.leadLimit)}%`, height: "100%", background: "#28559c", borderRadius: 9999 }} />
+            </div>
+            <div style={{ fontSize: 11.5, color: "#6b7280", marginTop: 8 }}>{Math.max(0, (me?.leadLimit ?? 0) - leads.length)} заявок в остатке</div>
           </div>
           <div className="kc-profile" style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 4px" }}>
-            <div style={{ width: 32, height: 32, borderRadius: 9999, background: "#28559c", color: "#ffffff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>ГК</div>
-            <div className="kc-label" style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Герман</div>
-              <div style={{ fontSize: 11.5, color: "#9ca3af" }}>german@kuhni-spb.ru</div>
+            <div style={{ width: 32, height: 32, borderRadius: 9999, background: "#28559c", color: "#ffffff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initialsOf(me)}</div>
+            <div className="kc-label" style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me?.name || "Профиль"}</div>
+              <div style={{ fontSize: 11.5, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me?.email}</div>
+            </div>
+            <div onClick={onLogout} title="Выйти" style={{ width: 28, height: 28, borderRadius: 9999, background: "#F5F5F5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
             </div>
           </div>
         </div>
@@ -164,39 +306,49 @@ export function CabinetApp() {
       <div className="kc-main" style={{ flex: 1, minWidth: 0, padding: "28px 32px", boxSizing: "border-box" }}>
         {tab === "dash" && (
           <Dashboard
+            kpis={buildKpis(quizzes, leads)}
             widgets={widgets}
             onOpenWidget={() => setWOpen(true)}
             onNewQuiz={() => setTab("quizzes")}
             onRemove={(i) => setWidgets((w) => w.filter((_, j) => j !== i))}
+            quizNames={["Все квизы", ...quizzes.map((q) => q.name)]}
           />
         )}
-        {tab === "quizzes" && <QuizzesSection onAi={() => { setAiOpen(true); setAiPhase("idle"); }} />}
+        {tab === "quizzes" && (
+          <QuizzesSection
+            quizzes={quizzes}
+            leads={leads}
+            onAi={() => { setAiOpen(true); setAiPhase("idle"); }}
+            onPublishToggle={publishToggle}
+            onRemove={removeQuiz}
+          />
+        )}
         {tab === "leads" && (
           <LeadsSection
+            quizzes={quizzes}
+            leads={leads}
             crmQuiz={crmQuiz}
             setCrmQuiz={setCrmQuiz}
             crmTab={crmTab}
             setCrmTab={setCrmTab}
-            openLead={(id) => { setLead(id); setLeadTab("overview"); }}
+            openLead={(id) => { setLeadId(id); setLeadTab("overview"); }}
           />
         )}
-        {tab === "integ" && (
-          <IntegSection connected={connected} onOpen={(idx) => { setIgIdx(idx); setIgTested(false); }} />
-        )}
-        {tab === "settings" && <SettingsSection />}
+        {tab === "integ" && <IntegSection connected={connected} onOpen={(idx) => { setIgIdx(idx); setIgTested(false); }} />}
+        {tab === "settings" && <SettingsSection me={me} leads={leads} onLogout={onLogout} />}
       </div>
 
       {/* Lead modal */}
       {ld && (
-        <div onClick={() => setLead(null)} style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(12px,4vw,32px)", boxSizing: "border-box" }}>
+        <div onClick={() => setLeadId(null)} style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,0.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(12px,4vw,32px)", boxSizing: "border-box" }}>
           <div onClick={stop} style={{ width: 560, maxWidth: "100%", maxHeight: "90vh", background: "#ffffff", borderRadius: 20, overflow: "hidden", boxSizing: "border-box", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(17,24,39,0.28)" }}>
             <div style={{ padding: "22px clamp(18px,4vw,26px) 0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>{ld.name}</div>
-                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 3 }}>{ld.phone} · {ld.when}</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>{ld.name || "Без имени"}</div>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 3 }}>{ld.phone} · {formatWhen(ld.created_at)}</div>
                 </div>
-                <div onClick={() => setLead(null)} style={closeBtn}>✕</div>
+                <div onClick={() => setLeadId(null)} style={closeBtn}>✕</div>
               </div>
               <div style={{ display: "flex", gap: 4, background: "#F5F5F5", borderRadius: 9999, padding: 4, marginTop: 18 }}>
                 {([["overview", "Обзор"], ["answers", "Ответы"], ["actions", "Действия"]] as const).map(([key, label]) => (
@@ -207,50 +359,50 @@ export function CabinetApp() {
             <div style={{ flex: 1, overflowY: "auto", padding: "20px clamp(18px,4vw,26px)", display: "flex", flexDirection: "column", gap: 18 }}>
               {leadTab === "overview" && (
                 <>
-                  <div style={{ background: ld.heatBg, borderRadius: 16, padding: 16 }}>
+                  <div style={{ background: heatOf(ld.heat).heatBg, borderRadius: 16, padding: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: ld.heatColor }}>{ld.heat} лид</span>
-                      <span style={{ fontSize: 18, fontWeight: 700, color: ld.heatColor }}>{ld.score}<span style={{ fontSize: 11, fontWeight: 500, opacity: 0.7 }}>/100</span></span>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: heatOf(ld.heat).heatColor }}>{heatOf(ld.heat).heat} лид</span>
+                      <span style={{ fontSize: 18, fontWeight: 700, color: heatOf(ld.heat).heatColor }}>{ld.score}<span style={{ fontSize: 11, fontWeight: 500, opacity: 0.7 }}>/100</span></span>
                     </div>
-                    <div style={{ height: 6, background: "rgba(255,255,255,0.6)", borderRadius: 9999, overflow: "hidden" }}><div style={{ height: "100%", background: ld.heatColor, borderRadius: 9999, width: `${ld.score}%` }} /></div>
+                    <div style={{ height: 6, background: "rgba(255,255,255,0.6)", borderRadius: 9999, overflow: "hidden" }}><div style={{ height: "100%", background: heatOf(ld.heat).heatColor, borderRadius: 9999, width: `${ld.score}%` }} /></div>
                   </div>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>{SPARK}Обобщение ИИ</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.65, color: "#374151", background: "#F8F9FB", borderRadius: 14, padding: "14px 16px" }}>{ld.summary}</div>
+                    <div style={{ fontSize: 13, lineHeight: 1.65, color: "#374151", background: "#F8F9FB", borderRadius: 14, padding: "14px 16px" }}>
+                      {ld.summary || "Обобщение появится, когда подключён ИИ (POLZA_API_KEY). Заявка со скорингом уже сохранена."}
+                    </div>
                   </div>
+                  <div style={{ fontSize: 12.5, color: "#6b7280" }}>Квиз: <b style={{ color: "#111827" }}>{ld.quiz_name}</b> · источник: {ld.source}</div>
                 </>
               )}
               {leadTab === "answers" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {ld.answers.length === 0 && <div style={{ fontSize: 12.5, color: "#9ca3af" }}>Ответы не переданы.</div>}
                   {ld.answers.map((a, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 12.5, border: "1px solid #f0f0f0", borderRadius: 12, padding: "11px 14px" }}>
                       <span style={{ color: "#6b7280", flex: 1 }}>{a.q}</span>
                       <b style={{ textAlign: "right" }}>{a.a}</b>
-                      <span style={{ fontSize: 10.5, color: "#9ca3af", background: "#F5F5F5", borderRadius: 9999, padding: "2px 8px", whiteSpace: "nowrap" }}>{a.t}</span>
                     </div>
                   ))}
                 </div>
               )}
               {leadTab === "actions" && (
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  {ld.timeline.map((t, i) => (
-                    <div key={i} style={{ display: "flex", gap: 12 }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.hot ? "#28559c" : "#d1d5db", marginTop: 5 }} />
-                        <span style={{ width: 1.5, flex: 1, background: "#eceef2" }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 6 }}>Статус заявки</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {STATUS_ORDER.map((st, i) => (
+                      <div key={st} onClick={() => changeLeadStatus(ld.id, st)} style={{ textAlign: "center", borderRadius: 12, padding: "11px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer", border: `1.5px solid ${ld.status === st ? columns[i].dot : "#e5e7eb"}`, background: ld.status === st ? "rgba(40,85,156,0.06)" : "#fff", color: ld.status === st ? "#111827" : "#374151" }}>
+                        {columns[i].label}
                       </div>
-                      <div style={{ paddingBottom: 14, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 500 }}>{t.e}</div>
-                        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{t.meta}</div>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <a href={`tel:${ld.phone}`} style={{ marginTop: 8, textAlign: "center", background: "#28559c", color: "#fff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, textDecoration: "none" }}>Позвонить {ld.phone}</a>
                 </div>
               )}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "16px clamp(18px,4vw,26px)", borderTop: "1px solid #f3f4f6" }}>
-              <div style={{ flex: 1, minWidth: 140, textAlign: "center", background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Взять в работу</div>
-              <div style={{ flex: 1, minWidth: 140, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer", boxSizing: "border-box" }}>В amoCRM</div>
+              <div onClick={() => changeLeadStatus(ld.id, "work")} style={{ flex: 1, minWidth: 140, textAlign: "center", background: ld.status === "work" ? "#1e437d" : "#28559c", color: "#ffffff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>{ld.status === "work" ? "В работе" : "Взять в работу"}</div>
+              <div onClick={() => changeLeadStatus(ld.id, "done")} style={{ flex: 1, minWidth: 140, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer", boxSizing: "border-box" }}>Успешная</div>
             </div>
           </div>
         </div>
@@ -267,7 +419,8 @@ export function CabinetApp() {
           tested={igTested}
           setTested={setIgTested}
           connected={!!connected[igIdx]}
-          onSave={() => { setConnected((c) => ({ ...c, [igIdx]: true })); setIgIdx(null); }}
+          onSave={saveIntegration}
+          onDisconnect={() => disconnectIntegration(igIdx)}
           onClose={() => setIgIdx(null)}
           stop={stop}
         />
@@ -283,8 +436,8 @@ export function CabinetApp() {
             </div>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Квиз</div>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 18 }}>
-              {qNames.map((label, i) => (
-                <Chip key={label} active={wQuiz === i} onClick={() => setWQuiz(i)}>{label}</Chip>
+              {["Все квизы", ...quizzes.map((q) => q.name)].map((label, i) => (
+                <Chip key={label + i} active={wQuiz === i} onClick={() => setWQuiz(i)}>{label}</Chip>
               ))}
             </div>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Что показывать</div>
@@ -311,6 +464,7 @@ export function CabinetApp() {
             {aiPhase === "idle" && (
               <AiIdle
                 onClose={closeAi}
+                business={aiBusiness} setBusiness={setAiBusiness}
                 aiGoal={aiGoal} setAiGoal={setAiGoal}
                 aiBonus={aiBonus} setAiBonus={setAiBonus}
                 aiTone={aiTone} setAiTone={setAiTone}
@@ -332,11 +486,22 @@ export function CabinetApp() {
                 <div style={{ width: 52, height: 52, borderRadius: 9999, background: "rgba(22,101,52,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>Квиз «Подбор кухни под ваш бюджет» готов</div>
-                <div style={{ fontSize: 12.5, color: "#6b7280", lineHeight: 1.6 }}>Обложка, {aiQn} вопросов с ветвлением, калькулятор стоимости и форма контактов со скидкой. Сохранён в черновики.</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Квиз «{aiQuiz?.name}» готов</div>
+                <div style={{ fontSize: 12.5, color: "#6b7280", lineHeight: 1.6 }}>Обложка, {aiQuiz?.steps.length ?? aiQn} вопросов и форма контактов. Сохранён в черновики.</div>
                 <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 360 }}>
-                  <Link href={routes.editor} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500 }}>Открыть в редакторе</Link>
+                  <Link href={aiQuiz ? `${routes.editor}?id=${aiQuiz.id}` : routes.editor} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500 }}>Открыть в редакторе</Link>
                   <div onClick={closeAi} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer", boxSizing: "border-box" }}>Позже</div>
+                </div>
+              </div>
+            )}
+            {aiPhase === "error" && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "28px 12px", textAlign: "center" }}>
+                <div style={{ width: 52, height: 52, borderRadius: 9999, background: "rgba(153,27,27,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>⚠️</div>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>Не получилось сгенерировать</div>
+                <div style={{ fontSize: 12.5, color: "#6b7280", lineHeight: 1.6 }}>{aiError}<br />Проверьте, что задан POLZA_API_KEY.</div>
+                <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 360 }}>
+                  <div onClick={() => setAiPhase("idle")} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Назад</div>
+                  <div onClick={closeAi} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500, cursor: "pointer", boxSizing: "border-box" }}>Закрыть</div>
                 </div>
               </div>
             )}
@@ -347,9 +512,31 @@ export function CabinetApp() {
   );
 }
 
+/* ---------- helpers for real data ---------- */
+
+function planLabel(plan?: string): string {
+  return { free: "Бесплатный", start: "Старт", pro: "Про", biz: "Бизнес" }[plan || "free"] || "Бесплатный";
+}
+function usagePct(used: number, limit?: number): number {
+  if (!limit) return 0;
+  return Math.min(100, Math.round((used / limit) * 100));
+}
+function buildKpis(quizzes: Quiz[], leads: Lead[]) {
+  const weekAgo = Date.now() - 7 * 864e5;
+  const week = leads.filter((l) => new Date(l.created_at).getTime() >= weekAgo).length;
+  const hot = leads.filter((l) => l.heat === "hot").length;
+  const active = quizzes.filter((q) => q.status === "active").length;
+  return [
+    { label: "Заявки всего", value: String(leads.length), delta: `${active} активных квизов`, deltaColor: "#6b7280" },
+    { label: "За 7 дней", value: String(week), delta: "новых заявок", deltaColor: "#166534" },
+    { label: "Горячие лиды", value: String(hot), delta: "по ИИ-скорингу", deltaColor: "#c2410c" },
+    { label: "Квизов", value: String(quizzes.length), delta: `${quizzes.length - active} черновиков`, deltaColor: "#6b7280" },
+  ];
+}
+
 /* ---------- Sections ---------- */
 
-function Dashboard({ widgets, onOpenWidget, onNewQuiz, onRemove }: { widgets: { t: string; q: number }[]; onOpenWidget: () => void; onNewQuiz: () => void; onRemove: (i: number) => void }) {
+function Dashboard({ kpis, widgets, onOpenWidget, onNewQuiz, onRemove, quizNames }: { kpis: { label: string; value: string; delta: string; deltaColor: string }[]; widgets: { t: string; q: number }[]; onOpenWidget: () => void; onNewQuiz: () => void; onRemove: (i: number) => void; quizNames: string[] }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
@@ -378,12 +565,13 @@ function Dashboard({ widgets, onOpenWidget, onNewQuiz, onRemove }: { widgets: { 
             <div onClick={() => onRemove(i)} style={{ position: "absolute", top: 14, right: 14, width: 24, height: 24, borderRadius: 9999, background: "#F5F5F5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 11, color: "#9ca3af" }}>✕</div>
             <div style={{ marginBottom: 18 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{widgetTitles[w.t]}</div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{qNames[w.q]}</div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{quizNames[w.q] ?? "Все квизы"}</div>
             </div>
             <WidgetBody type={w.t} />
           </div>
         ))}
       </div>
+      <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 16 }}>Графики виджетов — демонстрационные: детальная аналитика по шагам появится с трекингом показов.</div>
     </div>
   );
 }
@@ -436,7 +624,6 @@ function WidgetBody({ type }: { type: string }) {
       </div>
     );
   }
-  // cr
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ fontSize: 38, fontWeight: 600, letterSpacing: "-0.03em" }}>6,2%</div>
@@ -445,76 +632,122 @@ function WidgetBody({ type }: { type: string }) {
   );
 }
 
-function QuizzesSection({ onAi }: { onAi: () => void }) {
+function EmptyState({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
+  return (
+    <div style={{ background: "#ffffff", borderRadius: 20, padding: "48px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+      <div style={{ width: 54, height: 54, borderRadius: 16, background: "rgba(40,85,156,0.08)", display: "flex", alignItems: "center", justifyContent: "center" }}>{SPARK}</div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: 13, color: "#6b7280", maxWidth: 420, lineHeight: 1.5 }}>{text}</div>
+      {action && <div style={{ marginTop: 8 }}>{action}</div>}
+    </div>
+  );
+}
+
+function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { quizzes: Quiz[]; leads: Lead[]; onAi: () => void; onPublishToggle: (q: Quiz) => void; onRemove: (q: Quiz) => void }) {
+  const active = quizzes.filter((q) => q.status === "active").length;
+  const copyLink = (slug: string) => {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}/q/${slug}`;
+    navigator.clipboard?.writeText(url).then(() => alert("Ссылка скопирована:\n" + url)).catch(() => alert(url));
+  };
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
         <div>
           <h1 style={h1}>Квизы</h1>
-          <div style={subtitle}>3 активных · 1 черновик</div>
+          <div style={subtitle}>{active} активных · {quizzes.length - active} черновиков</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <div onClick={onAi} style={{ ...pill, display: "flex", alignItems: "center", gap: 7 }}>{SPARK}Сгенерировать ИИ</div>
-          <div style={{ background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "9px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>+ Новый квиз</div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
-        {quizzes.map((q) => (
-          <div key={q.name} style={{ background: "#ffffff", borderRadius: 20, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 9999, background: q.stBg, color: q.stColor }}>{q.st}</div>
-              <div style={{ color: "#9ca3af", fontSize: 16, cursor: "pointer", letterSpacing: 2 }}>···</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>{q.name}</div>
-              <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 4 }}>{q.where}</div>
-            </div>
-            <div style={{ display: "flex", gap: 18, fontSize: 12.5, color: "#6b7280", borderTop: "1px solid #f3f4f6", paddingTop: 14 }}>
-              <span><b style={{ color: "#111827", fontWeight: 600 }}>{q.views}</b> показов</span>
-              <span><b style={{ color: "#111827", fontWeight: 600 }}>{q.leads}</b> заявок</span>
-              <span><b style={{ color: "#166534", fontWeight: 600 }}>{q.cr}</b> CR</span>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Link href={routes.editor} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500 }}>Редактор</Link>
-              <div style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>Статистика</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {quizzes.length === 0 ? (
+        <EmptyState
+          title="Пока нет квизов"
+          text="Сгенерируйте первый квиз с помощью ИИ за минуту — опишите бизнес, а Квалифай соберёт обложку, вопросы и форму контактов."
+          action={<div onClick={onAi} style={{ background: "#28559c", color: "#fff", borderRadius: 9999, padding: "11px 22px", fontSize: 13.5, fontWeight: 500, cursor: "pointer", display: "inline-flex", gap: 7, alignItems: "center" }}>{SPARK}Сгенерировать квиз</div>}
+        />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
+          {quizzes.map((q) => {
+            const leadCount = leads.filter((l) => l.quiz_id === q.id).length;
+            const isActive = q.status === "active";
+            return (
+              <div key={q.id} style={{ background: "#ffffff", borderRadius: 20, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 9999, background: isActive ? "rgba(22,101,52,0.10)" : "rgba(17,24,39,0.07)", color: isActive ? "#166534" : "#6b7280" }}>{isActive ? "Активен" : "Черновик"}</div>
+                  <div onClick={() => onRemove(q)} title="Удалить" style={{ color: "#9ca3af", fontSize: 15, cursor: "pointer" }}>🗑</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>{q.name}</div>
+                  <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 4 }}>{isActive ? `/q/${q.slug}` : "Черновик · не опубликован"}</div>
+                </div>
+                <div style={{ display: "flex", gap: 18, fontSize: 12.5, color: "#6b7280", borderTop: "1px solid #f3f4f6", paddingTop: 14 }}>
+                  <span><b style={{ color: "#111827", fontWeight: 600 }}>{q.steps.length}</b> вопр.</span>
+                  <span><b style={{ color: "#111827", fontWeight: 600 }}>{leadCount}</b> заявок</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Link href={`${routes.editor}?id=${q.id}`} style={{ flex: 1, minWidth: 90, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500 }}>Редактор</Link>
+                  <div onClick={() => onPublishToggle(q)} style={{ flex: 1, minWidth: 90, textAlign: "center", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer", background: isActive ? "#F5F5F5" : "#28559c", color: isActive ? "#374151" : "#fff" }}>{isActive ? "Снять" : "Опубликовать"}</div>
+                </div>
+                {isActive && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <div onClick={() => copyLink(q.slug)} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>Копировать ссылку</div>
+                    <a href={`/q/${q.slug}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500 }}>Открыть</a>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { crmQuiz: number | null; setCrmQuiz: (v: number | null) => void; crmTab: "board" | "anal"; setCrmTab: (v: "board" | "anal") => void; openLead: (id: number) => void }) {
+function LeadsSection({ quizzes, leads, crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { quizzes: Quiz[]; leads: Lead[]; crmQuiz: string | null; setCrmQuiz: (v: string | null) => void; crmTab: "board" | "anal"; setCrmTab: (v: "board" | "anal") => void; openLead: (id: string) => void }) {
+  const quizzesWithLeads = quizzes.filter((q) => leads.some((l) => l.quiz_id === q.id));
+
   if (crmQuiz === null) {
     return (
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-          <div><h1 style={h1}>Заявки</h1><div style={subtitle}>Встроенная CRM · выберите квиз</div></div>
-          <div style={pill}>Экспорт CSV</div>
+          <div><h1 style={h1}>Заявки</h1><div style={subtitle}>Встроенная CRM · {leads.length} заявок</div></div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
-          {crmQuizzes.map((q, i) => (
-            <div key={q.name} onClick={() => { setCrmQuiz(i); setCrmTab("board"); }} className="qv-lift" style={{ background: "#ffffff", borderRadius: 20, padding: 22, cursor: "pointer", display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>{q.name}</div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, background: "rgba(40,85,156,0.10)", color: "#28559c" }}>{q.new} новых</span>
-                <span style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, background: "rgba(17,24,39,0.07)", color: "#111827" }}>{q.work} в работе</span>
-                <span style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, background: "rgba(22,101,52,0.10)", color: "#166534" }}>{q.done} успешных</span>
-              </div>
-              <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: "#6b7280", borderTop: "1px solid #f3f4f6", paddingTop: 12 }}>
-                <span>🔥 <b style={{ color: "#111827" }}>{q.hot}</b> горячих</span>
-                <span>дошли до конца — <b style={{ color: "#111827" }}>{q.finish}</b></span>
-              </div>
-            </div>
-          ))}
-        </div>
+        {quizzesWithLeads.length === 0 ? (
+          <EmptyState title="Заявок пока нет" text="Опубликуйте квиз и поделитесь ссылкой — заявки клиентов появятся здесь автоматически, со скорингом и обобщением ИИ." />
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+            {quizzesWithLeads.map((q) => {
+              const qLeads = leads.filter((l) => l.quiz_id === q.id);
+              const cnt = (st: string) => qLeads.filter((l) => l.status === st).length;
+              const hot = qLeads.filter((l) => l.heat === "hot").length;
+              return (
+                <div key={q.id} onClick={() => { setCrmQuiz(q.id); setCrmTab("board"); }} className="qv-lift" style={{ background: "#ffffff", borderRadius: 20, padding: 22, cursor: "pointer", display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>{q.name}</div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, background: "rgba(40,85,156,0.10)", color: "#28559c" }}>{cnt("new")} новых</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, background: "rgba(17,24,39,0.07)", color: "#111827" }}>{cnt("work")} в работе</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, background: "rgba(22,101,52,0.10)", color: "#166534" }}>{cnt("done")} успешных</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: "#6b7280", borderTop: "1px solid #f3f4f6", paddingTop: 12 }}>
+                    <span>🔥 <b style={{ color: "#111827" }}>{hot}</b> горячих</span>
+                    <span>всего — <b style={{ color: "#111827" }}>{qLeads.length}</b></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
+
+  const quiz = quizzes.find((q) => q.id === crmQuiz);
+  const qLeads = leads.filter((l) => l.quiz_id === crmQuiz);
 
   return (
     <div>
@@ -524,8 +757,8 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
           </div>
           <div>
-            <h1 style={{ ...h1, fontSize: 20 }}>{["Подбор кухни", "Шкафы-купе", "Ремонт под ключ"][crmQuiz]}</h1>
-            <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 2 }}>52 заявки в июле · конверсия 7,1%</div>
+            <h1 style={{ ...h1, fontSize: 20 }}>{quiz?.name}</h1>
+            <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 2 }}>{qLeads.length} заявок</div>
           </div>
         </div>
         <div style={{ display: "flex", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 9999, padding: 3 }}>
@@ -539,7 +772,7 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
         <div style={{ overflowX: "auto", paddingBottom: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(240px,1fr))", gap: 14, minWidth: 1000 }}>
             {columns.map((col, ci) => {
-              const cards = crmLeads.filter((l) => l.col === ci);
+              const cards = qLeads.filter((l) => STATUS_ORDER.indexOf(l.status) === ci);
               return (
                 <div key={col.label} style={{ background: "rgba(255,255,255,0.6)", borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 6px" }}>
@@ -550,17 +783,20 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
                   {cards.map((c) => (
                     <div key={c.id} onClick={() => openLead(c.id)} className="qv-kanban-card" style={{ background: "#ffffff", borderRadius: 14, padding: 14, cursor: "pointer", boxShadow: "0 1px 4px rgba(17,24,39,0.05)", display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
-                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 9999, background: c.heatBg, color: c.heatColor, whiteSpace: "nowrap", flexShrink: 0 }}>{c.heat}</span>
+                        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name || "Без имени"}</div>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 9999, background: heatOf(c.heat).heatBg, color: heatOf(c.heat).heatColor, whiteSpace: "nowrap", flexShrink: 0 }}>{heatOf(c.heat).heat}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "#6b7280" }}>{c.phone}</div>
-                      <div style={{ fontSize: 11.5, lineHeight: 1.5, color: "#374151", background: "#F8F9FB", borderRadius: 10, padding: "8px 10px", display: "flex", gap: 6 }}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#28559c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" /></svg>
-                        <span>{c.summary.split(".")[0]}.</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{c.when}</div>
+                      {c.summary && (
+                        <div style={{ fontSize: 11.5, lineHeight: 1.5, color: "#374151", background: "#F8F9FB", borderRadius: 10, padding: "8px 10px", display: "flex", gap: 6 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#28559c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" /></svg>
+                          <span>{c.summary.split(".")[0]}.</span>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{formatWhen(c.created_at)}</div>
                     </div>
                   ))}
+                  {cards.length === 0 && <div style={{ fontSize: 11.5, color: "#c4c8cf", textAlign: "center", padding: "10px 0" }}>Пусто</div>}
                 </div>
               );
             })}
@@ -570,7 +806,7 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
         <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, alignItems: "start" }} className="qv-anal-grid">
           <div style={{ background: "#ffffff", borderRadius: 20, padding: 22, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Где выходят люди</div>
-            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 18 }}>1 391 открытие за 7 дней</div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 18 }}>Демонстрационные данные — трекинг шагов в разработке</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {dropSteps.map((d) => (
                 <div key={d.label}>
@@ -582,24 +818,12 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 18, fontSize: 12.5, lineHeight: 1.6, color: "#374151", background: "#F8F9FB", borderRadius: 12, padding: "12px 14px", display: "flex", gap: 8 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#28559c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 3 }}><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" /></svg>
-              <span><b>Вывод ИИ:</b> главный отвал — шаг «Бюджет» (−31%). Люди задерживаются на нём 34 сек — вероятно, вариантов мало или диапазоны неудачные. Попробуйте добавить вариант «Пока не знаю».</span>
-            </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
             <div style={{ background: "#ffffff", borderRadius: 20, padding: 22 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>События за 7 дней</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>По этому квизу</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12.5 }}>
-                {[["Клики «Начать расчёт»", "1 391"], ["Средняя глубина", "4,1 из 6 шагов"], ["Среднее время в квизе", "1 мин 48 сек"], ["Возвраты на шаг назад", "217"], ["Досмотр обложки (скролл)", "84%"]].map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>{k}</span><b>{v}</b></div>
-                ))}
-              </div>
-            </div>
-            <div style={{ background: "#ffffff", borderRadius: 20, padding: 22 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Источники заявок</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12.5 }}>
-                {[["Встроенный блок", "29"], ["Плавающая кнопка", "17"], ["Прямая ссылка", "6"]].map(([k, v]) => (
+                {[["Всего заявок", String(qLeads.length)], ["Горячих", String(qLeads.filter((l) => l.heat === "hot").length)], ["Средний скоринг", String(Math.round(qLeads.reduce((s, l) => s + l.score, 0) / (qLeads.length || 1)))], ["Успешных", String(qLeads.filter((l) => l.status === "done").length)]].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>{k}</span><b>{v}</b></div>
                 ))}
               </div>
@@ -644,7 +868,7 @@ function IntegSection({ connected, onOpen }: { connected: Record<number, boolean
   );
 }
 
-function SettingsSection() {
+function SettingsSection({ me, leads, onLogout }: { me: Me | null; leads: Lead[]; onLogout: () => void }) {
   return (
     <div>
       <div style={{ marginBottom: 24 }}><h1 style={h1}>Настройки</h1><div style={subtitle}>Аккаунт и тариф</div></div>
@@ -652,28 +876,27 @@ function SettingsSection() {
         <div style={{ background: "#ffffff", borderRadius: 20, padding: 24 }}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Профиль</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-            {[["Имя", "Герман"], ["Почта", "german@kuhni-spb.ru"], ["Компания", "Кухни СПб"]].map(([l, v]) => (
+            {[["Имя", me?.name || "—"], ["Почта", me?.email || "—"], ["Компания", me?.company || "—"]].map(([l, v]) => (
               <div key={l}>
                 <div style={{ color: "#9ca3af", fontSize: 12, marginBottom: 5 }}>{l}</div>
                 <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "10px 14px" }}>{v}</div>
               </div>
             ))}
           </div>
+          <div onClick={onLogout} style={{ marginTop: 18, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "10px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer", color: "#991b1b" }}>Выйти из аккаунта</div>
         </div>
         <div style={{ background: "#ffffff", borderRadius: 20, padding: 24, display: "flex", flexDirection: "column" }}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Тариф</div>
           <div style={{ background: "#28559c", color: "#ffffff", borderRadius: 16, padding: "18px 20px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 15, fontWeight: 600 }}>Про · 300 заявок</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>{planLabel(me?.plan)} · {me?.leadLimit ?? 0} заявок</div>
               <div style={{ fontSize: 12, background: "#ffffff", color: "#28559c", borderRadius: 9999, padding: "3px 10px", fontWeight: 600 }}>Активен</div>
             </div>
-            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", marginTop: 8 }}>2 790 ₽/мес · следующее списание 1 августа</div>
+            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", marginTop: 8 }}>Лимит заявок в месяц по тарифу</div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "14px 4px 0", color: "#6b7280" }}><span>Остаток заявок</span><b style={{ color: "#111827" }}>106 из 318</b></div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "8px 4px 0", color: "#6b7280" }}><span>Перенесено с июня</span><b style={{ color: "#166534" }}>18</b></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "14px 4px 0", color: "#6b7280" }}><span>Использовано заявок</span><b style={{ color: "#111827" }}>{leads.length} из {me?.leadLimit ?? 0}</b></div>
           <div style={{ marginTop: "auto", paddingTop: 18, display: "flex", gap: 8 }}>
             <Link href={routes.tarify} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500 }}>Сменить тариф</Link>
-            <div style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>История оплат</div>
           </div>
         </div>
       </div>
@@ -683,10 +906,10 @@ function SettingsSection() {
 
 /* ---------- Modals ---------- */
 
-function IntegModal({ idx, vals, setVals, tg, setTg, tested, setTested, connected, onSave, onClose, stop }: {
+function IntegModal({ idx, vals, setVals, tg, setTg, tested, setTested, connected, onSave, onDisconnect, onClose, stop }: {
   idx: number; vals: Record<string, string>; setVals: (f: (v: Record<string, string>) => Record<string, string>) => void;
   tg: boolean; setTg: (v: boolean) => void; tested: boolean; setTested: (v: boolean) => void;
-  connected: boolean; onSave: () => void; onClose: () => void; stop: (e: React.MouseEvent) => void;
+  connected: boolean; onSave: () => void; onDisconnect: () => void; onClose: () => void; stop: (e: React.MouseEvent) => void;
 }) {
   const def = integDefs[idx];
   return (
@@ -732,15 +955,20 @@ function IntegModal({ idx, vals, setVals, tg, setTg, tested, setTested, connecte
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
           <div onClick={onSave} style={{ flex: 1, background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "12px 0", fontSize: 13.5, fontWeight: 500, textAlign: "center", cursor: "pointer" }}>{connected ? "Сохранить" : "Подключить"}</div>
-          <div onClick={() => setTested(true)} style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 9999, padding: "12px 0", fontSize: 13.5, fontWeight: 500, textAlign: "center", cursor: "pointer", boxSizing: "border-box", color: tested ? "#166534" : "#374151" }}>{tested ? "✓ Тест прошёл" : "Тест"}</div>
+          {connected ? (
+            <div onClick={onDisconnect} style={{ flex: 1, border: "1px solid rgba(153,27,27,0.3)", color: "#991b1b", borderRadius: 9999, padding: "12px 0", fontSize: 13.5, fontWeight: 500, textAlign: "center", cursor: "pointer", boxSizing: "border-box" }}>Отключить</div>
+          ) : (
+            <div onClick={() => setTested(true)} style={{ flex: 1, border: "1px solid #e5e7eb", borderRadius: 9999, padding: "12px 0", fontSize: 13.5, fontWeight: 500, textAlign: "center", cursor: "pointer", boxSizing: "border-box", color: tested ? "#166534" : "#374151" }}>{tested ? "✓ Готово" : "Тест"}</div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function AiIdle({ onClose, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAiTone, aiQn, setAiQn, aiCalc, setAiCalc, onRun }: {
+function AiIdle({ onClose, business, setBusiness, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAiTone, aiQn, setAiQn, aiCalc, setAiCalc, onRun }: {
   onClose: () => void;
+  business: string; setBusiness: (v: string) => void;
   aiGoal: number; setAiGoal: (v: number) => void;
   aiBonus: number; setAiBonus: (v: number) => void;
   aiTone: number; setAiTone: (v: number) => void;
@@ -763,11 +991,11 @@ function AiIdle({ onClose, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAi
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 7 }}>Опишите ваш бизнес и что продаёте</div>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.5, color: "#111827", minHeight: 56 }}>Студия кухонь на заказ в Санкт-Петербурге. Средний чек 350 тысяч, срок изготовления 30 дней, бесплатный замер.</div>
+          <textarea value={business} onChange={(e) => setBusiness(e.target.value)} rows={3} style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.5, color: "#111827", fontFamily: "inherit", resize: "vertical", outlineColor: "#28559c" }} />
         </div>
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Цель квиза</div>
-          <ChipRow items={["Заявки и лиды", "Расчёт стоимости", "Подбор товара", "Опрос клиентов"]} active={aiGoal} onPick={setAiGoal} />
+          <ChipRow items={GOAL_OPTS} active={aiGoal} onPick={setAiGoal} />
         </div>
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 8 }}><span style={{ fontWeight: 600 }}>Количество вопросов</span><b style={{ color: "#28559c" }}>{aiQn}</b></div>
@@ -775,11 +1003,11 @@ function AiIdle({ onClose, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAi
         </div>
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Бонус за прохождение</div>
-          <ChipRow items={["Скидка", "Подарок", "Консультация", "Без бонуса"]} active={aiBonus} onPick={setAiBonus} />
+          <ChipRow items={BONUS_OPTS} active={aiBonus} onPick={setAiBonus} />
         </div>
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Тон текстов</div>
-          <ChipRow items={["Дружелюбный", "Деловой", "Экспертный"]} active={aiTone} onPick={setAiTone} />
+          <ChipRow items={TONE_OPTS} active={aiTone} onPick={setAiTone} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F5F5F5", borderRadius: 12, padding: "12px 14px" }}>
           <span style={{ fontSize: 12.5, color: "#374151", flex: 1 }}>Добавить калькулятор стоимости по ответам</span>

@@ -120,8 +120,11 @@ export function Nav({
               <MoscowClock />
             </div>
           )}
+          <RollLink href={routes.vhod} style={{ height: 20 }}>
+            Войти
+          </RollLink>
           <Link
-            href={routes.editor}
+            href={routes.cabinet}
             className="qv-grp"
             style={{
               display: "flex",

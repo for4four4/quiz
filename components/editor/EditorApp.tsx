@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
+import { api, type QuizDesign } from "@/lib/client/api";
 
 type BlockId = "title" | "subtitle" | "benefits" | "button";
 type Mode = "slides" | "button" | "display";
@@ -80,6 +81,53 @@ export function EditorApp() {
   const [bgColor, setBgColor] = useState("#ffffff");
   const [bgImage, setBgImage] = useState(0);
   const [stepGoal, setStepGoal] = useState(true);
+
+  // Привязка к реальному квизу (?id=…): имя, статус, сохранение
+  const [quizId, setQuizId] = useState<string | null>(null);
+  const [quizName, setQuizName] = useState("Новый квиз");
+  const [quizSlug, setQuizSlug] = useState("");
+  const [quizStatus, setQuizStatus] = useState("draft");
+  const [savedAt, setSavedAt] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const designRef = useRef<QuizDesign>({});
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id) return;
+    setQuizId(id);
+    api.quiz(id)
+      .then(({ quiz }) => {
+        setQuizName(quiz.name);
+        setQuizSlug(quiz.slug);
+        setQuizStatus(quiz.status);
+        designRef.current = quiz.design || {};
+        if (quiz.design?.accent) setBtnBg(quiz.design.accent);
+        if (quiz.design?.bg) { setBgColor(quiz.design.bg); }
+      })
+      .catch(() => { /* черновик без id — редактор в демо-режиме */ });
+  }, []);
+
+  const persist = async (extra: { status?: string } = {}) => {
+    if (!quizId) { alert("Сначала создайте квиз в кабинете (кнопка «Сгенерировать ИИ»)."); return; }
+    setSaving(true);
+    try {
+      const design: QuizDesign = { ...designRef.current, accent: btnBg, bg: bgColor };
+      const { quiz } = await api.updateQuiz(quizId, { design, ...extra });
+      designRef.current = quiz.design || design;
+      setQuizStatus(quiz.status);
+      setQuizSlug(quiz.slug);
+      setSavedAt(new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const publish = () => persist({ status: quizStatus === "active" ? "draft" : "active" });
+  const preview = () => {
+    if (quizStatus === "active" && quizSlug) window.open(`/q/${quizSlug}`, "_blank");
+    else alert("Опубликуйте квиз, чтобы открыть публичную ссылку.");
+  };
 
   const [order, setOrder] = useState<BlockId[]>(["title", "subtitle", "benefits", "button"]);
   const [dragging, setDragging] = useState<BlockId | null>(null);
@@ -170,8 +218,8 @@ export function EditorApp() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>Кабинет
           </Link>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Подбор кухни</div>
-            <div style={{ fontSize: 11.5, color: "#9ca3af" }}>Сохранено только что</div>
+            <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{quizName}</div>
+            <div style={{ fontSize: 11.5, color: "#9ca3af" }}>{savedAt ? `Сохранено в ${savedAt}` : quizStatus === "active" ? "Опубликован" : quizId ? "Черновик" : "Демо-режим"}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -188,8 +236,9 @@ export function EditorApp() {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Предпросмотр</div>
-          <div style={{ background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "8px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Опубликовать</div>
+          <div onClick={preview} style={{ border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Предпросмотр</div>
+          <div onClick={() => persist()} style={{ border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Сохраняем…" : "Сохранить"}</div>
+          <div onClick={publish} style={{ background: quizStatus === "active" ? "#111827" : "#28559c", color: "#ffffff", borderRadius: 9999, padding: "8px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>{quizStatus === "active" ? "Снять с публикации" : "Опубликовать"}</div>
         </div>
       </div>
 
