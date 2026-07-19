@@ -696,13 +696,19 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { q
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <div onClick={onAi} style={{ ...pill, display: "flex", alignItems: "center", gap: 7 }}>{SPARK}Сгенерировать ИИ</div>
+          <Link href={routes.editor} style={{ background: "#28559c", color: "#fff", borderRadius: 9999, padding: "9px 18px", fontSize: 13, fontWeight: 500, textDecoration: "none" }}>+ Новый квиз</Link>
         </div>
       </div>
       {quizzes.length === 0 ? (
         <EmptyState
           title="Пока нет квизов"
-          text="Сгенерируйте первый квиз с помощью ИИ за минуту — опишите бизнес, а Квалифай соберёт обложку, вопросы и форму контактов."
-          action={<div onClick={onAi} style={{ background: "#28559c", color: "#fff", borderRadius: 9999, padding: "11px 22px", fontSize: 13.5, fontWeight: 500, cursor: "pointer", display: "inline-flex", gap: 7, alignItems: "center" }}>{SPARK}Сгенерировать квиз</div>}
+          text="Соберите квиз вручную в редакторе или сгенерируйте его ИИ за минуту — Квалифай подготовит обложку, вопросы и форму контактов."
+          action={
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+              <div onClick={onAi} style={{ background: "#28559c", color: "#fff", borderRadius: 9999, padding: "11px 22px", fontSize: 13.5, fontWeight: 500, cursor: "pointer", display: "inline-flex", gap: 7, alignItems: "center" }}>{SPARK}Сгенерировать ИИ</div>
+              <Link href={routes.editor} style={{ border: "1px solid #e5e7eb", borderRadius: 9999, padding: "11px 22px", fontSize: 13.5, fontWeight: 500, textDecoration: "none", color: "#374151" }}>Собрать вручную</Link>
+            </div>
+          }
         />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
