@@ -5,9 +5,11 @@ import Link from "next/link";
 import { routes } from "@/lib/nav";
 import { api } from "@/lib/client/api";
 import {
-  blockCss, deriveSteps, docToDesign, FONT_LABELS, FONTS, migrateToDoc, newBlock,
-  type Block, type BlockStyle, type BlockType, type QuizDoc, type Step,
+  blockCss, deriveSteps, docToDesign, FONT_LABELS, FONTS, migrateToDoc, newBlock, withSettings,
+  type Block, type BlockStyle, type BlockType, type QuizDoc, type QuizSettings, type Step,
 } from "@/lib/quiz/doc";
+import { ButtonShowEditor } from "./ButtonShowEditor";
+import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, panelLabel, Section, Segmented, Select, Slider, ta } from "./controls";
 
 const PALETTE: [BlockType, string, string][] = [
   ["heading", "T", "Заголовок"],
@@ -34,6 +36,7 @@ export function EditorApp() {
   const [doc, setDoc] = useState<QuizDoc>(starterDoc);
   const [selStep, setSelStep] = useState(0);
   const [selBlock, setSelBlock] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState<"content" | "button">("content");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -138,6 +141,11 @@ export function EditorApp() {
   const setStepBg = (patch: Partial<Step["bg"]>) => patchStep(selStep, (s) => ({ ...s, bg: { ...s.bg, ...patch } }));
   const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
 
+  // Настройки кнопки/показа/анимаций
+  const onButton = (p: Partial<QuizSettings["button"]>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, button: { ...s.button, ...p } } }; }); touch(); };
+  const onDisplay = (p: Partial<QuizSettings["display"]>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, display: { ...s.display, ...p } } }; }); touch(); };
+  const onAnim = (p: Partial<Pick<QuizSettings, "slideAnim" | "openAnim">>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, ...p } } as QuizDoc; }); touch(); };
+
   const addStep = () => {
     const ns: Step = { id: Math.random().toString(36).slice(2, 9), kind: "question", title: "Новый вопрос", bg: { type: "color", value: doc.theme.bg }, blocks: [newBlock("heading", doc.theme.accent), newBlock("options", doc.theme.accent)] };
     ns.blocks[0].text = "Новый вопрос";
@@ -192,6 +200,11 @@ export function EditorApp() {
           <input value={name} onChange={(e) => { setName(e.target.value); touch(); }} style={{ fontSize: 14, fontWeight: 600, border: "1px solid transparent", borderRadius: 8, padding: "6px 8px", minWidth: 0, maxWidth: 320, fontFamily: "inherit", background: "transparent" }} onFocus={(e) => (e.currentTarget.style.borderColor = "#e5e7eb")} onBlur={(e) => (e.currentTarget.style.borderColor = "transparent")} />
           <div style={{ fontSize: 11.5, color: dirty ? "#c2410c" : "#9ca3af", whiteSpace: "nowrap" }}>{dirty ? "Не сохранено" : savedAt ? `Сохранено в ${savedAt}` : status === "active" ? "Опубликован" : "Черновик"}</div>
         </div>
+        <div style={{ display: "flex", background: "#F5F5F5", borderRadius: 9999, padding: 3, flexShrink: 0 }}>
+          {([["content", "Контент"], ["button", "Кнопка и показ"]] as const).map(([m, label]) => (
+            <div key={m} onClick={() => setEditMode(m)} style={{ borderRadius: 9999, padding: "6px 14px", fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap", background: editMode === m ? "#fff" : "transparent", color: editMode === m ? "#111827" : "#6b7280", boxShadow: editMode === m ? "0 1px 4px rgba(0,0,0,0.08)" : "none" }}>{label}</div>
+          ))}
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div onClick={preview} style={btnGhost}>Предпросмотр</div>
           <div onClick={() => persist()} style={{ ...btnGhost, opacity: saving ? 0.6 : 1 }}>{saving ? "Сохраняем…" : "Сохранить"}</div>
@@ -199,6 +212,9 @@ export function EditorApp() {
         </div>
       </div>
 
+      {editMode === "button" ? (
+        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} />
+      ) : (
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Left: steps + palette */}
         <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -261,6 +277,7 @@ export function EditorApp() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -441,50 +458,3 @@ function StepInspector({ step, theme, setStepField, setStepBg, setTheme, onDelet
   );
 }
 
-/* ── reusable controls ──────────────────────────────────── */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 14, display: "flex", flexDirection: "column", gap: 12 }}><div style={panelLabel}>{title}</div>{children}</div>;
-}
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 5 }}>{label}</div>{children}</div>;
-}
-function Slider({ label, v, min, max, unit, onChange }: { label: string; v: number; min: number; max: number; unit: string; onChange: (v: number) => void }) {
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#6b7280", marginBottom: 4 }}><span>{label}</span><b style={{ color: "#111827" }}>{v}{unit}</b></div>
-      <input type="range" min={min} max={max} value={v} onChange={(e) => onChange(+e.target.value)} style={{ width: "100%", accentColor: "#28559c" }} />
-    </div>
-  );
-}
-function ColorRow({ label, value, onChange, extra }: { label: string; value: string; onChange: (v: string) => void; extra?: React.ReactNode }) {
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: "#6b7280", marginBottom: 5 }}><span>{label}</span>{extra}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#ffffff"} onChange={(e) => onChange(e.target.value)} style={{ width: 34, height: 30, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: 2, cursor: "pointer" }} />
-        <input value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, flex: 1, fontFamily: "monospace", fontSize: 12 }} />
-      </div>
-    </div>
-  );
-}
-function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
-  return (
-    <div style={{ display: "flex", background: "#F5F5F5", borderRadius: 9999, padding: 3 }}>
-      {options.map(([val, label]) => (
-        <div key={val} onClick={() => onChange(val)} style={{ flex: 1, textAlign: "center", borderRadius: 9999, padding: "6px 0", fontSize: 12, fontWeight: 500, cursor: "pointer", background: value === val ? "#fff" : "transparent", color: value === val ? "#111827" : "#6b7280", boxShadow: value === val ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>{label}</div>
-      ))}
-    </div>
-  );
-}
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, cursor: "pointer" }}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
-}
-function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
-  return <span title={title} onClick={onClick} style={{ width: 26, height: 26, borderRadius: 8, background: "#F5F5F5", color: danger ? "#991b1b" : "#6b7280", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>{children}</span>;
-}
-
-const btnGhost: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" };
-const panelLabel: CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" };
-const addRow: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 12, padding: "9px 12px", fontSize: 12.5, fontWeight: 500, textAlign: "center", color: "#6b7280", cursor: "pointer" };
-const inp: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", color: "#111827", outlineColor: "#28559c" };
-const ta: CSSProperties = { ...inp, resize: "vertical", lineHeight: 1.4 };

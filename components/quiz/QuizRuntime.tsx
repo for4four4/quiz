@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { blockCss, FONTS, type Block, type QuizDoc } from "@/lib/quiz/doc";
+import { ANIM_KEYFRAME, blockCss, FONTS, withSettings, type Block, type QuizDoc } from "@/lib/quiz/doc";
 
 export type PublicQuiz = {
   slug: string;
@@ -16,6 +16,9 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   const doc = quiz.doc;
   const steps = doc.steps;
   const accent = doc.theme.accent || "#28559c";
+  const settings = withSettings(doc);
+  const slideKf = ANIM_KEYFRAME[settings.slideAnim];
+  const progressColor = settings.display.progressColor || accent;
 
   const [i, setI] = useState(0);
   const [answers, setAnswers] = useState<{ q: string; a: string }[]>([]);
@@ -137,7 +140,9 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   return (
     <main style={{ ...pageStyle, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
       <div style={{ ...cardStyle, ...cardBg }}>
-        <div style={barStyle}><div style={{ ...fillStyle, width: `${progress}%`, background: accent }} /></div>
+        {settings.display.progressOn && (
+          <div style={barStyle}><div style={{ ...fillStyle, width: `${progress}%`, background: progressColor }} /></div>
+        )}
 
         {done ? (
           <div style={{ textAlign: "center", padding: "28px 0" }}>
@@ -146,7 +151,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
             <p style={{ fontSize: 14, color: "#6b7280", marginTop: 8 }}>Спасибо! Мы свяжемся с вами в ближайшее время.</p>
           </div>
         ) : (
-          <div>
+          <div key={i} style={{ animation: slideKf ? `${slideKf} .42s cubic-bezier(.2,.8,.3,1)` : undefined }}>
             {step.blocks.map((b) => (
               <BlockView key={b.id} block={b} accent={accent} contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />
             ))}

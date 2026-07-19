@@ -48,11 +48,72 @@ export type Step = {
   goal?: string;                          // цель Метрики/коллтрекинга при показе шага
 };
 
+export type SlideAnim = "none" | "fade" | "slideL" | "slideUp" | "zoom" | "flip";
+export type OpenAnim = "fade" | "zoom" | "slideUp" | "flip";
+
+export type QuizButton = {
+  text: string;
+  sub: string;
+  showSub: boolean;
+  bg: string;
+  color: string;
+  width: number;
+  height: number;
+  radius: number;
+  icon: boolean;
+  position: number;     // 0..8 — сетка 3×3 (как в дизайне)
+  fullscreen: boolean;  // кнопка-полоса на всю ширину
+};
+export type QuizDisplay = {
+  mode: "popup" | "embedded";
+  trigger: "click" | "time" | "page";
+  delaySec: number;
+  pageUrl: string;
+  dim: number;          // затемнение фона 0..85
+  popupBg: string;      // фон за попапом ("transparent" или цвет)
+  progressOn: boolean;
+  progressStyle: "line" | "steps" | "percent";
+  progressColor: string;
+};
+export type QuizSettings = {
+  slideAnim: SlideAnim;
+  openAnim: OpenAnim;
+  button: QuizButton;
+  display: QuizDisplay;
+};
+
 export type QuizDoc = {
   v: 1;
   theme: { accent: string; font: string; bg: string };
   steps: Step[];
+  settings?: QuizSettings;
 };
+
+// keyframes из globals.css
+export const ANIM_KEYFRAME: Record<string, string> = {
+  none: "", fade: "qvAFade", slideL: "qvASlideL", slideUp: "qvASlideUp", zoom: "qvAZoom", flip: "qvAFlip",
+};
+export const SLIDE_ANIM_LABELS: [SlideAnim, string][] = [
+  ["fade", "Плавно"], ["slideL", "Сдвиг"], ["slideUp", "Снизу"], ["zoom", "Зум"], ["flip", "Флип"], ["none", "Без анимации"],
+];
+export const OPEN_ANIM_LABELS: [OpenAnim, string][] = [
+  ["fade", "Плавно"], ["zoom", "Зум"], ["slideUp", "Снизу"], ["flip", "Флип"],
+];
+
+export function defaultSettings(accent = "#28559c"): QuizSettings {
+  return {
+    slideAnim: "slideUp",
+    openAnim: "zoom",
+    button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: accent, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
+    display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", progressOn: true, progressStyle: "line", progressColor: accent },
+  };
+}
+
+export function withSettings(doc: QuizDoc): QuizSettings {
+  const d = defaultSettings(doc.theme.accent);
+  if (!doc.settings) return d;
+  return { ...d, ...doc.settings, button: { ...d.button, ...doc.settings.button }, display: { ...d.display, ...doc.settings.display } };
+}
 
 export const FONTS: Record<string, string> = {
   system: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif",
@@ -153,7 +214,7 @@ export function migrateToDoc(
     ],
   });
 
-  return { v: 1, theme: { accent, font: "system", bg }, steps: out };
+  return { v: 1, theme: { accent, font: "system", bg }, steps: out, settings: defaultSettings(accent) };
 }
 
 /** Достаём простые шаги (вопрос/варианты) — для CRM, лидов и аналитики. */
@@ -176,6 +237,7 @@ export function docToDesign(doc: QuizDoc) {
   const texts = (cover?.blocks || []).filter((b) => b.type === "text");
   return {
     doc,
+    settings: withSettings(doc),
     accent: doc.theme.accent,
     bg: doc.theme.bg,
     cover: {
