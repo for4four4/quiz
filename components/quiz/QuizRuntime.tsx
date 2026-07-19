@@ -12,7 +12,10 @@ export type PublicQuiz = {
     contactForm?: { title?: string; bonus?: string };
     accent?: string;
   };
+  metrikaCounter?: string;
 };
+
+type Ym = ((...args: unknown[]) => void) & { a?: unknown[]; l?: number };
 
 const ACCENT_DEFAULT = "#28559c";
 
@@ -38,10 +41,34 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   useEffect(() => {
     sessionRef.current = Math.random().toString(36).slice(2) + Date.now().toString(36);
   }, []);
+  // Яндекс.Метрика: счётчик владельца квиза + цели на шаги/заявку
+  useEffect(() => {
+    const c = quiz.metrikaCounter;
+    if (!c || typeof window === "undefined") return;
+    const w = window as unknown as { ym?: Ym };
+    if (!w.ym) {
+      const stub = ((...a: unknown[]) => { (stub.a = stub.a || []).push(a); }) as Ym;
+      stub.l = Date.now();
+      w.ym = stub;
+      const s = document.createElement("script");
+      s.async = true;
+      s.src = "https://mc.yandex.ru/metrika/tag.js";
+      document.head.appendChild(s);
+    }
+    w.ym(Number(c), "init", { defer: true, clickmap: true, trackLinks: true, accurateTrackBounce: true });
+  }, [quiz.metrikaCounter]);
+  const ymGoal = (name: string) => {
+    const c = quiz.metrikaCounter;
+    if (!c || typeof window === "undefined") return;
+    const w = window as unknown as { ym?: Ym };
+    w.ym?.(Number(c), "reachGoal", name);
+  };
+
   const track = (type: "open" | "step" | "contact", step?: number) => {
     const key = type === "step" ? `step${step}` : type;
     if (trackedRef.current.has(key)) return;
     trackedRef.current.add(key);
+    ymGoal(type === "open" ? "quiz_open" : type === "contact" ? "quiz_contact" : "quiz_step");
     try {
       fetch("/api/public/event", {
         method: "POST",
@@ -91,6 +118,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) throw new Error(data.error || "Не удалось отправить");
+      ymGoal("quiz_lead");
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка отправки");

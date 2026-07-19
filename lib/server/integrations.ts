@@ -67,6 +67,54 @@ async function sendWebhook(url: string, secret: string | undefined, l: LeadPaylo
   await fetch(url, { method: "POST", headers, body });
 }
 
+// Битрикс24 — входящий вебхук: создаём лид (crm.lead.add).
+async function sendBitrix24(webhookUrl: string, l: LeadPayload) {
+  if (!webhookUrl) return;
+  const base = webhookUrl.endsWith("/") ? webhookUrl : webhookUrl + "/";
+  const fields: Record<string, unknown> = {
+    TITLE: `Квалифай · ${l.quizName}`,
+    NAME: l.name || "Заявка с квиза",
+    PHONE: [{ VALUE: l.phone, VALUE_TYPE: "WORK" }],
+    SOURCE_DESCRIPTION: l.source,
+    COMMENTS: leadText(l),
+    OPPORTUNITY: l.score,
+  };
+  if (l.email) fields.EMAIL = [{ VALUE: l.email, VALUE_TYPE: "WORK" }];
+  await fetch(base + "crm.lead.add.json", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fields, params: { REGISTER_SONET_EVENT: "Y" } }),
+  });
+}
+
+// amoCRM — создаём сделку с контактом (нужен домен + долгоживущий токен доступа).
+async function sendAmocrm(domain: string, token: string, l: LeadPayload) {
+  if (!domain || !token) return;
+  const host = domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const body = [
+    {
+      name: `${l.quizName} · ${l.name || "заявка"}`,
+      price: l.score,
+      _embedded: {
+        contacts: [
+          {
+            name: l.name || "Клиент с квиза",
+            custom_fields_values: [
+              { field_code: "PHONE", values: [{ value: l.phone, enum_code: "WORK" }] },
+              ...(l.email ? [{ field_code: "EMAIL", values: [{ value: l.email, enum_code: "WORK" }] }] : []),
+            ],
+          },
+        ],
+      },
+    },
+  ];
+  await fetch(`https://${host}/api/v4/leads/complex`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
 /** Fan out a lead to all enabled integrations for a user. Best-effort. */
 export async function dispatchLead(integrations: IntegrationRow[], lead: LeadPayload): Promise<void> {
   await Promise.allSettled(
@@ -79,6 +127,8 @@ export async function dispatchLead(integrations: IntegrationRow[], lead: LeadPay
           case "vk": return sendVk(c.gid, c.userId, lead);
           case "max": return sendMax(c.chatId || c.code, lead);
           case "webhook": return sendWebhook(c.url, c.secret, lead);
+          case "bitrix24": return sendBitrix24(c.url, lead);
+          case "amocrm": return sendAmocrm(c.domain, c.token, lead);
           default: return Promise.resolve();
         }
       })
