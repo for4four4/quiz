@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ANIM_KEYFRAME, blockCss, FONTS, withSettings, type Block, type QuizDoc } from "@/lib/quiz/doc";
+import { ANIM_KEYFRAME, blockCss, FONTS, withCard, withSettings, type Block, type QuizDoc } from "@/lib/quiz/doc";
 
 export type PublicQuiz = {
   slug: string;
@@ -144,11 +144,22 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
     ? { backgroundImage: `url(${step.bg.value})`, backgroundSize: "cover", backgroundPosition: "center" }
     : { background: step.bg?.value || doc.theme.bg || "#ffffff" };
 
+  const card = withCard(doc);
+  const free = step.layout === "free";
+  const stageH = free ? Math.max(240, card.minHeight || 480) : undefined;
+  const contentH = stageH ? stageH - card.padY * 2 : undefined;
+
   const progress = Math.round((i / Math.max(1, steps.length - 1)) * 100);
+
+  const cardStyleDyn: CSSProperties = {
+    width: "100%", maxWidth: card.width, background: "#fff", borderRadius: card.radius,
+    boxShadow: "0 12px 40px rgba(17,24,39,.12)", padding: `${card.padY}px ${card.padX}px`, boxSizing: "border-box",
+    minHeight: free ? stageH : card.minHeight || undefined,
+  };
 
   return (
     <main style={{ ...pageStyle, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
-      <div style={{ ...cardStyle, ...cardBg }}>
+      <div style={{ ...cardStyleDyn, ...cardBg }}>
         {settings.display.progressOn && (
           <div style={barStyle}><div style={{ ...fillStyle, width: `${progress}%`, background: progressColor }} /></div>
         )}
@@ -160,10 +171,13 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
             <p style={{ fontSize: 14, color: "#6b7280", marginTop: 8 }}>Спасибо! Мы свяжемся с вами в ближайшее время.</p>
           </div>
         ) : (
-          <div key={i} style={{ animation: slideKf ? `${slideKf} .42s cubic-bezier(.2,.8,.3,1)` : undefined }}>
-            {step.blocks.map((b) => (
-              <BlockView key={b.id} block={b} accent={accent} contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />
-            ))}
+          <div key={i} style={{ animation: slideKf ? `${slideKf} .42s cubic-bezier(.2,.8,.3,1)` : undefined, position: free ? "relative" : undefined, height: free ? contentH : undefined }}>
+            {step.blocks.map((b, idx) => {
+              const view = <BlockView block={b} accent={accent} free={free} contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />;
+              if (!free) return <div key={b.id}>{view}</div>;
+              const p = b.pos || { x: 0, y: idx * 70, w: card.width - card.padX * 2 };
+              return <div key={b.id} style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: p.h }}>{view}</div>;
+            })}
             {step.kind === "contact" && error && <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 10, textAlign: "center" }}>{error}</div>}
           </div>
         )}
@@ -173,9 +187,10 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   );
 }
 
-function BlockView({ block, accent, contact, setContact, onPick, onButton, sending }: {
+function BlockView({ block, accent, free, contact, setContact, onPick, onButton, sending }: {
   block: Block;
   accent: string;
+  free?: boolean;
   contact: { name: string; phone: string; email: string };
   setContact: (f: (c: { name: string; phone: string; email: string }) => { name: string; phone: string; email: string }) => void;
   onPick: (opt: string, goal?: string, targetId?: string) => void;
@@ -183,12 +198,10 @@ function BlockView({ block, accent, contact, setContact, onPick, onButton, sendi
   sending: boolean;
 }) {
   const s = block.style;
-  const outer: CSSProperties = {
-    marginTop: s.marginTop,
-    display: "flex",
-    justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center",
-  };
-  const innerWidth = `${s.width}%`;
+  const outer: CSSProperties = free
+    ? { display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" }
+    : { marginTop: s.marginTop, display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" };
+  const innerWidth = free ? "100%" : `${s.width}%`;
   const css = blockCss(s) as CSSProperties;
 
   if (block.type === "heading" || block.type === "text") {
@@ -198,11 +211,14 @@ function BlockView({ block, accent, contact, setContact, onPick, onButton, sendi
       </div>
     );
   }
+  if (block.type === "slider") {
+    return <div style={outer}><SliderBlock images={block.images || []} width={innerWidth} height={s.height || 200} radius={s.radius} /></div>;
+  }
   if (block.type === "image") {
     return (
       <div style={outer}>
         {block.src
-          ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: innerWidth, height: s.height || "auto", objectFit: "cover", borderRadius: s.radius, marginTop: 0, border: s.borderWidth ? `${s.borderWidth}px solid ${s.borderColor}` : "none" }} />
+          ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: innerWidth, height: s.height || (free ? "100%" : "auto"), objectFit: "cover", borderRadius: s.radius, marginTop: 0, border: s.borderWidth ? `${s.borderWidth}px solid ${s.borderColor}` : "none" }} />
           : <div style={{ width: innerWidth, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка</div>}
       </div>
     );
@@ -254,8 +270,38 @@ function BlockView({ block, accent, contact, setContact, onPick, onButton, sendi
   );
 }
 
+function SliderBlock({ images, width, height, radius }: { images: string[]; width: string; height: number; radius: number }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (images.length <= 1) return;
+    const t = setInterval(() => setIdx((v) => (v + 1) % images.length), 3500);
+    return () => clearInterval(t);
+  }, [images.length]);
+  if (!images.length) return <div style={{ width, height, borderRadius: radius, background: "#eef1f6" }} />;
+  const go = (d: number) => setIdx((v) => (v + d + images.length) % images.length);
+  return (
+    <div style={{ width, height, borderRadius: radius, overflow: "hidden", position: "relative", background: "#000" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={images[idx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", transition: "opacity .3s" }} />
+      {images.length > 1 && (
+        <>
+          <button onClick={() => go(-1)} style={arrowBtn("left")}>‹</button>
+          <button onClick={() => go(1)} style={arrowBtn("right")}>›</button>
+          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5 }}>
+            {images.map((_, k) => (
+              <span key={k} onClick={() => setIdx(k)} style={{ width: 7, height: 7, borderRadius: 999, cursor: "pointer", background: k === idx ? "#fff" : "rgba(255,255,255,0.5)" }} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+function arrowBtn(side: "left" | "right"): CSSProperties {
+  return { position: "absolute", top: "50%", transform: "translateY(-50%)", [side]: 8, width: 30, height: 30, borderRadius: 999, border: "none", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } as CSSProperties;
+}
+
 const pageStyle: CSSProperties = { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20, background: "#E8EDF6" };
-const cardStyle: CSSProperties = { width: "100%", maxWidth: 460, background: "#fff", borderRadius: 20, boxShadow: "0 12px 40px rgba(17,24,39,.12)", padding: 28, boxSizing: "border-box" };
 const barStyle: CSSProperties = { height: 5, background: "rgba(0,0,0,0.08)", borderRadius: 999, overflow: "hidden", marginBottom: 4 };
 const fillStyle: CSSProperties = { height: "100%", borderRadius: 999, transition: "width .3s ease" };
 const madeWith: CSSProperties = { fontSize: 12, color: "#9ca3af", textDecoration: "none" };

@@ -77,6 +77,38 @@ export function Chips({ value, onChange, options }: { value: string; onChange: (
 export function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, cursor: "pointer" }}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
 }
+/** Несколько картинок файлами — для слайдера / фона попапа. */
+export function MultiUpload({ images, onChange }: { images: string[]; onChange: (imgs: string[]) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const pick = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    setBusy(true);
+    try {
+      const urls: string[] = [];
+      for (const f of Array.from(files)) { const { url } = await api.upload(f); urls.push(url); }
+      onChange([...images, ...urls]);
+    } catch { /* ignore */ } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {images.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {images.map((src, i) => (
+            <div key={i} style={{ position: "relative", width: 60, height: 44 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt="" style={{ width: 60, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+              <span onClick={() => onChange(images.filter((_, j) => j !== i))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 999, background: "#991b1b", color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>✕</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <input ref={ref} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => pick(e.target.files)} />
+      <div onClick={() => ref.current?.click()} style={{ ...btnGhost, textAlign: "center", opacity: busy ? 0.6 : 1 }}>{busy ? "Загрузка…" : "+ Добавить картинки"}</div>
+    </div>
+  );
+}
+
 export function IconBtn({ children, onClick, title, danger }: { children: ReactNode; onClick: () => void; title: string; danger?: boolean }) {
   return <span title={title} onClick={onClick} style={{ width: 26, height: 26, borderRadius: 8, background: "#F5F5F5", color: danger ? "#991b1b" : "#6b7280", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>{children}</span>;
 }

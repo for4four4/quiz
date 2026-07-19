@@ -4,7 +4,7 @@
  * (`components/quiz/QuizRuntime`). Без серверных зависимостей.
  */
 
-export type BlockType = "heading" | "text" | "options" | "input" | "button" | "image" | "html";
+export type BlockType = "heading" | "text" | "options" | "input" | "button" | "image" | "html" | "slider";
 
 export type BlockStyle = {
   width: number;        // % ширины карточки
@@ -23,6 +23,8 @@ export type BlockStyle = {
   font: string;         // ключ из FONTS
 };
 
+export type BlockPos = { x: number; y: number; w: number; h?: number }; // свободное размещение (px внутри окна)
+
 export type Block = {
   id: string;
   type: BlockType;
@@ -32,8 +34,10 @@ export type Block = {
   field?: "name" | "phone" | "email" | "text";    // input
   placeholder?: string;                           // input
   src?: string;                                   // image (URL/загруженный файл)
+  images?: string[];                              // slider — набор картинок
   html?: string;                                  // html (свой HTML/встраивание)
   goal?: string;                                  // цель Метрики/коллтрекинга при клике
+  pos?: BlockPos;                                 // позиция при layout:"free"
   style: BlockStyle;
 };
 
@@ -45,9 +49,14 @@ export type Step = {
   title: string;                          // служебное имя шага в редакторе
   bg: { type: "color" | "image"; value: string };
   blocks: Block[];
+  layout?: "flow" | "free";               // flow — блоки в столбик, free — свободно
   js?: string;                            // свой JS, выполняется при показе шага
   goal?: string;                          // цель Метрики/коллтрекинга при показе шага
 };
+
+/** Размер и стиль окна (карточки) квиза — общий для всех шагов. */
+export type CardCfg = { width: number; minHeight: number; padX: number; padY: number; radius: number };
+export function defaultCard(): CardCfg { return { width: 460, minHeight: 0, padX: 28, padY: 28, radius: 20 }; }
 
 export type SlideAnim = "none" | "fade" | "slideL" | "slideUp" | "zoom" | "flip";
 export type OpenAnim = "fade" | "zoom" | "slideUp" | "flip";
@@ -65,6 +74,7 @@ export type QuizButton = {
   position: number;     // 0..8 — сетка 3×3 (как в дизайне)
   fullscreen: boolean;  // кнопка-полоса на всю ширину
 };
+export type PopupPos = "center" | "br" | "bl" | "tr" | "tl";
 export type QuizDisplay = {
   mode: "popup" | "embedded";
   trigger: "click" | "time" | "page";
@@ -72,10 +82,15 @@ export type QuizDisplay = {
   pageUrl: string;
   dim: number;          // затемнение фона 0..85
   popupBg: string;      // фон за попапом ("transparent" или цвет)
+  popupImages?: string[]; // картинки за попапом — если >1, показываются слайдером
+  position?: PopupPos;  // где открывается окно на экране
   progressOn: boolean;
   progressStyle: "line" | "steps" | "percent";
   progressColor: string;
 };
+export const POPUP_POS_LABELS: [PopupPos, string][] = [
+  ["center", "По центру"], ["br", "Справа внизу"], ["bl", "Слева внизу"], ["tr", "Справа вверху"], ["tl", "Слева вверху"],
+];
 export type QuizSettings = {
   slideAnim: SlideAnim;
   openAnim: OpenAnim;
@@ -88,7 +103,12 @@ export type QuizDoc = {
   theme: { accent: string; font: string; bg: string };
   steps: Step[];
   settings?: QuizSettings;
+  card?: CardCfg;
 };
+
+export function withCard(doc: QuizDoc): CardCfg {
+  return { ...defaultCard(), ...(doc.card || {}) };
+}
 
 // keyframes из globals.css
 export const ANIM_KEYFRAME: Record<string, string> = {
@@ -106,7 +126,7 @@ export function defaultSettings(accent = "#28559c"): QuizSettings {
     slideAnim: "slideUp",
     openAnim: "zoom",
     button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: accent, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
-    display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", progressOn: true, progressStyle: "line", progressColor: accent },
+    display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", popupImages: [], position: "center", progressOn: true, progressStyle: "line", progressColor: accent },
   };
 }
 
@@ -169,6 +189,8 @@ export function newBlock(type: BlockType, accent = "#28559c"): Block {
       return { id: uid(), type, src: "", style: defStyle({ width: 100, height: 180, radius: 12 }) };
     case "html":
       return { id: uid(), type, html: "<!-- свой HTML/встраивание -->", style: defStyle({ width: 100 }) };
+    case "slider":
+      return { id: uid(), type, images: [], style: defStyle({ width: 100, height: 200, radius: 12 }) };
   }
 }
 
@@ -215,7 +237,7 @@ export function migrateToDoc(
     ],
   });
 
-  return { v: 1, theme: { accent, font: "system", bg }, steps: out, settings: defaultSettings(accent) };
+  return { v: 1, theme: { accent, font: "system", bg }, steps: out, settings: defaultSettings(accent), card: defaultCard() };
 }
 
 /** Достаём простые шаги (вопрос/варианты) — для CRM, лидов и аналитики. */

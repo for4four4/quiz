@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { ANIM_KEYFRAME, OPEN_ANIM_LABELS, SLIDE_ANIM_LABELS, type QuizSettings } from "@/lib/quiz/doc";
-import { Chips, ColorRow, Field, Section, Segmented, Slider, Toggle } from "./controls";
+import { ANIM_KEYFRAME, OPEN_ANIM_LABELS, POPUP_POS_LABELS, SLIDE_ANIM_LABELS, type QuizSettings } from "@/lib/quiz/doc";
+import { Chips, ColorRow, Field, MultiUpload, Section, Segmented, Slider, Toggle } from "./controls";
 
 const POPUP_BGS: [string, string][] = [
   ["transparent", "Нет"],
@@ -85,6 +85,7 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
           <Field label="Когда показывать"><Chips value={d.trigger} onChange={(v) => onDisplay({ trigger: v as QuizSettings["display"]["trigger"] })} options={[["click", "По клику"], ["time", "Через время"], ["page", "На странице"]]} /></Field>
           {d.trigger === "time" && <Slider label="Задержка" v={d.delaySec} min={3} max={120} unit=" сек" onChange={(v) => onDisplay({ delaySec: v })} />}
           {d.trigger === "page" && <Field label="Адрес страницы"><input value={d.pageUrl} onChange={(e) => onDisplay({ pageUrl: e.target.value })} style={{ ...inp, fontFamily: "monospace" }} /></Field>}
+          <Field label="Где открывается окно"><Chips value={d.position || "center"} onChange={(v) => onDisplay({ position: v as QuizSettings["display"]["position"] })} options={POPUP_POS_LABELS} /></Field>
           <Slider label="Затемнение фона" v={d.dim} min={0} max={85} unit="%" onChange={(v) => onDisplay({ dim: v })} />
           <div>
             <div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 6 }}>Фон за попапом</div>
@@ -94,6 +95,7 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
               ))}
             </div>
           </div>
+          <Field label="Картинки за попапом (файлы, >1 = слайдер)"><MultiUpload images={d.popupImages || []} onChange={(imgs) => onDisplay({ popupImages: imgs })} /></Field>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>Прогресс-бар</span>
             <Toggle on={d.progressOn} onClick={() => onDisplay({ progressOn: !d.progressOn })} />
@@ -133,8 +135,12 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
             <div style={{ fontSize: 12, color: "#9ca3af" }}>Попап · анимация появления и слайдов</div>
             <div onClick={() => setReplay((r) => r + 1)} style={{ fontSize: 12, fontWeight: 500, color: "#28559c", cursor: "pointer", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "5px 12px" }}>▶ Проиграть</div>
           </div>
-          <div style={{ borderRadius: 20, height: 340, position: "relative", overflow: "hidden", background: d.popupBg === "transparent" ? "#eef1f6" : d.popupBg }}>
-            <div style={{ position: "absolute", inset: 0, background: `rgba(15,23,42,${(d.dim / 100).toFixed(2)})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ borderRadius: 20, height: 340, position: "relative", overflow: "hidden", background: (d.popupImages && d.popupImages.length) ? undefined : d.popupBg === "transparent" ? "#eef1f6" : d.popupBg }}>
+            {d.popupImages && d.popupImages.length > 0 && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={d.popupImages[0]} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+            )}
+            <div style={{ position: "absolute", inset: 0, padding: 20, boxSizing: "border-box", background: `rgba(15,23,42,${(d.dim / 100).toFixed(2)})`, display: "flex", alignItems: posAlign(d.position).v, justifyContent: posAlign(d.position).h }}>
               <div key={`pop-${replay}`} style={{ background: "#fff", borderRadius: 16, width: 300, padding: 22, boxSizing: "border-box", boxShadow: "0 24px 64px rgba(15,23,42,0.35)", animation: openKf ? `${openKf} .55s cubic-bezier(.2,.8,.3,1)` : undefined }}>
                 {d.progressOn && <div style={{ marginBottom: 14 }}><ProgressPreview style={d.progressStyle} color={d.progressColor} /></div>}
                 <div key={`slide-${replay}`} style={{ animation: slideKf ? `${slideKf} .5s cubic-bezier(.2,.8,.3,1)` : undefined }}>
@@ -152,6 +158,16 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
       </div>
     </div>
   );
+}
+
+function posAlign(p?: string): { v: string; h: string } {
+  switch (p) {
+    case "br": return { v: "flex-end", h: "flex-end" };
+    case "bl": return { v: "flex-end", h: "flex-start" };
+    case "tr": return { v: "flex-start", h: "flex-end" };
+    case "tl": return { v: "flex-start", h: "flex-start" };
+    default: return { v: "center", h: "center" };
+  }
 }
 
 function ProgressPreview({ style, color }: { style: string; color: string }) {

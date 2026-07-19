@@ -5,11 +5,11 @@ import Link from "next/link";
 import { routes } from "@/lib/nav";
 import { api } from "@/lib/client/api";
 import {
-  blockCss, deriveSteps, docToDesign, FONT_LABELS, FONTS, migrateToDoc, newBlock, withSettings,
-  type Block, type BlockStyle, type BlockType, type QuizDoc, type QuizSettings, type Step,
+  blockCss, deriveSteps, docToDesign, FONT_LABELS, FONTS, migrateToDoc, newBlock, withCard, withSettings,
+  type Block, type BlockPos, type BlockStyle, type BlockType, type CardCfg, type QuizDoc, type QuizSettings, type Step,
 } from "@/lib/quiz/doc";
 import { ButtonShowEditor } from "./ButtonShowEditor";
-import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, panelLabel, Section, Segmented, Select, Slider, ta, UploadField } from "./controls";
+import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, MultiUpload, panelLabel, Section, Segmented, Select, Slider, ta, Toggle, UploadField } from "./controls";
 
 const PALETTE: [BlockType, string, string][] = [
   ["heading", "T", "Заголовок"],
@@ -18,6 +18,7 @@ const PALETTE: [BlockType, string, string][] = [
   ["input", "▭", "Поле"],
   ["button", "◉", "Кнопка"],
   ["image", "▣", "Картинка"],
+  ["slider", "▦", "Слайдер"],
   ["html", "</>", "HTML/JS"],
 ];
 
@@ -37,6 +38,8 @@ export function EditorApp() {
   const [selStep, setSelStep] = useState(0);
   const [selBlock, setSelBlock] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<"content" | "button">("content");
+  const [hoverStep, setHoverStep] = useState<string | null>(null);
+  const [armedDel, setArmedDel] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -122,6 +125,10 @@ export function EditorApp() {
 
   const addBlock = (type: BlockType) => {
     const nb = newBlock(type, doc.theme.accent);
+    if (step?.layout === "free") {
+      const n = step.blocks.length;
+      nb.pos = { x: 20, y: 20 + n * 24, w: Math.max(120, withCard(doc).width - withCard(doc).padX * 2 - 40) };
+    }
     setDoc((d) => ({ ...d, steps: d.steps.map((s, i) => (i === selStep ? { ...s, blocks: [...s.blocks, nb] } : s)) }));
     setSelBlock(nb.id); touch();
   };
@@ -140,6 +147,31 @@ export function EditorApp() {
   const setStepField = <K extends keyof Step>(k: K, v: Step[K]) => patchStep(selStep, (s) => ({ ...s, [k]: v }));
   const setStepBg = (patch: Partial<Step["bg"]>) => patchStep(selStep, (s) => ({ ...s, bg: { ...s.bg, ...patch } }));
   const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
+  const setCard = (patch: Partial<CardCfg>) => { setDoc((d) => ({ ...d, card: { ...withCard(d), ...patch } })); touch(); };
+
+  // Свободное размещение: перемещение и ресайз блока мышью
+  const patchBlockPos = (id: string, patch: Partial<BlockPos>) =>
+    setDoc((d) => ({ ...d, steps: d.steps.map((s, i) => (i === selStepRef.current ? { ...s, blocks: s.blocks.map((b) => (b.id === id ? { ...b, pos: { x: 0, y: 0, w: 220, ...(b.pos || {}), ...patch } } : b)) } : s)) }));
+  const beginMove = (id: string) => (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const b = doc.steps[selStepRef.current]?.blocks.find((x) => x.id === id);
+    const p0 = b?.pos || { x: 0, y: 0, w: 220 };
+    const sx = e.clientX, sy = e.clientY;
+    const move = (ev: PointerEvent) => patchBlockPos(id, { x: Math.max(0, Math.round(p0.x + ev.clientX - sx)), y: Math.max(0, Math.round(p0.y + ev.clientY - sy)) });
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };
+  const beginResize = (id: string) => (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const b = doc.steps[selStepRef.current]?.blocks.find((x) => x.id === id);
+    const p0 = b?.pos || { x: 0, y: 0, w: 220 };
+    const sx = e.clientX, sy = e.clientY, h0 = p0.h || 120;
+    const move = (ev: PointerEvent) => patchBlockPos(id, { w: Math.max(40, Math.round(p0.w + ev.clientX - sx)), h: Math.max(24, Math.round(h0 + ev.clientY - sy)) });
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };
 
   // Настройки кнопки/показа/анимаций
   const onButton = (p: Partial<QuizSettings["button"]>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, button: { ...s.button, ...p } } }; }); touch(); };
@@ -224,14 +256,24 @@ export function EditorApp() {
               {doc.steps.map((s, i) => {
                 const active = selStep === i;
                 const dragging = dragId === s.id;
+                const canDel = s.kind === "question" && doc.steps.length > 1;
+                const showDel = canDel && (hoverStep === s.id || armedDel === s.id);
+                const armed = armedDel === s.id;
                 return (
                   <div key={s.id} data-id={s.id} onClick={() => { setSelStep(i); setSelBlock(null); }}
+                    onMouseEnter={() => { setHoverStep(s.id); if (armedDel && armedDel !== s.id) setArmedDel(null); }}
+                    onMouseLeave={() => setHoverStep((h) => (h === s.id ? null : h))}
                     style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "#fff", border: "1px solid " + (active ? "rgba(40,85,156,0.25)" : "transparent"), opacity: dragging ? 0.5 : 1, boxShadow: dragging ? "0 8px 24px rgba(17,24,39,0.18)" : "none", transition: "box-shadow .15s ease" }}>
                     <span style={{ width: 22, height: 22, borderRadius: 6, background: active ? "#28559c" : "#f3f4f6", color: active ? "#fff" : "#6b7280", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{s.kind === "cover" ? "◎" : s.kind === "contact" ? "✎" : i}</span>
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: active ? "#28559c" : "#374151" }}>{s.kind === "cover" ? "Обложка" : s.kind === "contact" ? "Контакты" : `Шаг ${i}`}</span>
                       <span style={{ display: "block", fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.blocks.find((b) => b.type === "heading")?.text || s.title}</span>
                     </span>
+                    {showDel && (
+                      <span title={armed ? "Нажмите ещё раз, чтобы удалить" : "Удалить шаг"}
+                        onClick={(e) => { e.stopPropagation(); if (armed) { deleteStep(i); setArmedDel(null); } else { setArmedDel(s.id); } }}
+                        style={{ width: 20, height: 20, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", fontSize: 11, fontWeight: 700, background: armed ? "#dc2626" : "#F5F5F5", color: armed ? "#fff" : "#9ca3af", transition: "background .15s" }}>{armed ? "✓" : "✕"}</span>
+                    )}
                     <span onPointerDown={beginDrag("step", s.id)} onClick={(e) => e.stopPropagation()} title="Тянуть" style={{ color: "#c4c8cf", fontSize: 13, cursor: "grab", padding: "2px 4px", touchAction: "none" }}>⠿</span>
                   </div>
                 );
@@ -253,16 +295,26 @@ export function EditorApp() {
 
         {/* Center: canvas */}
         <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "36px 24px" }}>
-          <div data-dnd="blocks" onClick={() => setSelBlock(null)} style={{ ...cardBg, borderRadius: 20, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: 460, maxWidth: "100%", padding: 30, boxSizing: "border-box", minHeight: 300, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
-            {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
-            {step.blocks.map((b) => (
-              <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id} dragging={dragId === b.id}
-                onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
-                onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
-                onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
-                onGrip={beginDrag("block", b.id)} />
-            ))}
-          </div>
+          {(() => {
+            const card = withCard(doc);
+            const free = step.layout === "free";
+            const stageH = free ? Math.max(240, card.minHeight || 480) : undefined;
+            return (
+              <div data-dnd="blocks" onClick={() => setSelBlock(null)}
+                style={{ ...cardBg, borderRadius: card.radius, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: card.width, maxWidth: "100%", padding: `${card.padY}px ${card.padX}px`, boxSizing: "border-box", minHeight: free ? stageH : Math.max(240, card.minHeight || 0) || 300, position: "relative", fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
+                {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
+                {free && <div style={{ position: "absolute", top: 6, left: 8, fontSize: 10, color: "#c4c8cf", pointerEvents: "none" }}>Свободное размещение · тяните блоки</div>}
+                {step.blocks.map((b, idx) => (
+                  <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id} dragging={dragId === b.id}
+                    free={free} freeIndex={idx} contentW={card.width - card.padX * 2}
+                    onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
+                    onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
+                    onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
+                    onGrip={free ? beginMove(b.id) : beginDrag("block", b.id)} onResize={beginResize(b.id)} />
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Right: inspector */}
@@ -273,7 +325,7 @@ export function EditorApp() {
               onDelete={() => deleteBlock(block.id)} onDup={() => duplicateBlock(block.id)}
               onUp={() => moveBlock(block.id, -1)} onDown={() => moveBlock(block.id, 1)} />
           ) : (
-            <StepInspector step={step} theme={doc.theme} setStepField={setStepField} setStepBg={setStepBg} setTheme={setTheme}
+            <StepInspector step={step} theme={doc.theme} card={withCard(doc)} setStepField={setStepField} setStepBg={setStepBg} setTheme={setTheme} setCard={setCard}
               onDeleteStep={() => deleteStep(selStep)} canDelete={doc.steps.length > 1 && step.kind === "question"} />
           )}
         </div>
@@ -284,15 +336,19 @@ export function EditorApp() {
 }
 
 /* ── canvas block ───────────────────────────────────────── */
-function CanvasBlock({ block, accent, selected, dragging, onSelect, onText, onOption, onGrip }: {
+function CanvasBlock({ block, accent, selected, dragging, free, freeIndex, contentW, onSelect, onText, onOption, onGrip, onResize }: {
   block: Block; accent: string; selected: boolean; dragging: boolean;
+  free: boolean; freeIndex: number; contentW: number;
   onSelect: (e: React.MouseEvent) => void; onText: (v: string) => void; onOption: (i: number, v: string) => void;
-  onGrip: (e: React.PointerEvent) => void;
+  onGrip: (e: React.PointerEvent) => void; onResize: (e: React.PointerEvent) => void;
 }) {
   const s = block.style;
-  const w = `${s.width}%`;
+  const w = free ? "100%" : `${s.width}%`;
   const css = blockCss(s) as CSSProperties;
-  const outer: CSSProperties = { position: "relative", marginTop: s.marginTop, outline: selected ? "2px solid #28559c" : "2px solid transparent", outlineOffset: 3, borderRadius: 6, cursor: "pointer", opacity: dragging ? 0.4 : 1, transition: "opacity .12s ease" };
+  const pos = block.pos || { x: 0, y: freeIndex * 70, w: contentW };
+  const outer: CSSProperties = free
+    ? { position: "absolute", left: pos.x, top: pos.y, width: pos.w, height: pos.h, outline: selected ? "2px solid #28559c" : "2px dashed rgba(40,85,156,0.25)", outlineOffset: 2, borderRadius: 6, cursor: "move", opacity: dragging ? 0.5 : 1 }
+    : { position: "relative", marginTop: s.marginTop, outline: selected ? "2px solid #28559c" : "2px solid transparent", outlineOffset: 3, borderRadius: 6, cursor: "pointer", opacity: dragging ? 0.4 : 1, transition: "opacity .12s ease" };
   const alignWrap: CSSProperties = { display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" };
 
   let inner: React.ReactNode;
@@ -302,8 +358,13 @@ function CanvasBlock({ block, accent, selected, dragging, onSelect, onText, onOp
       : <div style={{ ...css, width: w, textAlign: s.align, whiteSpace: "pre-wrap" }}>{block.text || "Пустой текст"}</div>;
   } else if (block.type === "image") {
     inner = block.src
-      ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: s.height || "auto", objectFit: "cover", borderRadius: s.radius }} />
-      : <div style={{ width: w, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка · задайте URL</div>;
+      ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: s.height || (free ? "100%" : "auto"), objectFit: "cover", borderRadius: s.radius }} />
+      : <div style={{ width: w, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка · загрузите файл</div>;
+  } else if (block.type === "slider") {
+    const imgs = block.images || [];
+    inner = imgs.length
+      ? /* eslint-disable-next-line @next/next/no-img-element */ <div style={{ width: w, height: s.height || 200, borderRadius: s.radius, overflow: "hidden", position: "relative", background: "#eef1f6" }}><img src={imgs[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /><span style={{ position: "absolute", bottom: 6, right: 8, background: "rgba(0,0,0,.5)", color: "#fff", fontSize: 11, borderRadius: 999, padding: "2px 8px" }}>▦ {imgs.length}</span></div>
+      : <div style={{ width: w, height: s.height || 180, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Слайдер · добавьте картинки</div>;
   } else if (block.type === "html") {
     inner = <div style={{ width: w, border: "1px dashed #d1d5db", borderRadius: 8, padding: 10, fontSize: 12, fontFamily: "monospace", color: "#6b7280", overflow: "hidden" }}>{"</>"} HTML/JS блок</div>;
   } else if (block.type === "button") {
@@ -327,10 +388,14 @@ function CanvasBlock({ block, accent, selected, dragging, onSelect, onText, onOp
   return (
     <div data-id={block.id} onClick={onSelect} style={outer}>
       {selected && (
-        <span onPointerDown={onGrip} onClick={(e) => e.stopPropagation()} title="Тянуть блок"
-          style={{ position: "absolute", top: -12, left: -6, zIndex: 4, background: accent, color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6, cursor: "grab", userSelect: "none", touchAction: "none", boxShadow: "0 2px 8px rgba(17,24,39,0.2)" }}>⠿ тянуть</span>
+        <span onPointerDown={onGrip} onClick={(e) => e.stopPropagation()} title={free ? "Двигать блок" : "Тянуть блок"}
+          style={{ position: "absolute", top: -12, left: -6, zIndex: 4, background: accent, color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6, cursor: free ? "move" : "grab", userSelect: "none", touchAction: "none", boxShadow: "0 2px 8px rgba(17,24,39,0.2)" }}>{free ? "✥ двигать" : "⠿ тянуть"}</span>
       )}
-      <div style={alignWrap}>{inner}</div>
+      {free && selected && (
+        <span onPointerDown={onResize} onClick={(e) => e.stopPropagation()} title="Размер"
+          style={{ position: "absolute", right: -7, bottom: -7, zIndex: 4, width: 14, height: 14, borderRadius: 3, background: "#fff", border: `2px solid ${accent}`, cursor: "nwse-resize", touchAction: "none" }} />
+      )}
+      {free ? inner : <div style={alignWrap}>{inner}</div>}
     </div>
   );
 }
@@ -344,7 +409,7 @@ function BlockInspector({ block, setStyle, setField, branchSteps, onDelete, onDu
   onDelete: () => void; onDup: () => void; onUp: () => void; onDown: () => void;
 }) {
   const s = block.style;
-  const typeName: Record<BlockType, string> = { heading: "Заголовок", text: "Текст", options: "Варианты", input: "Поле", button: "Кнопка", image: "Картинка", html: "HTML/JS" };
+  const typeName: Record<BlockType, string> = { heading: "Заголовок", text: "Текст", options: "Варианты", input: "Поле", button: "Кнопка", image: "Картинка", slider: "Слайдер", html: "HTML/JS" };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -374,6 +439,9 @@ function BlockInspector({ block, setStyle, setField, branchSteps, onDelete, onDu
         )}
         {block.type === "image" && (
           <Field label="Картинка (файл)"><UploadField value={block.src} onChange={(v) => setField("src", v)} /></Field>
+        )}
+        {block.type === "slider" && (
+          <Field label="Картинки слайдера (файлы)"><MultiUpload images={block.images || []} onChange={(imgs) => setField("images", imgs)} /></Field>
         )}
         {block.type === "html" && (
           <Field label="HTML / встраивание"><textarea value={block.html || ""} onChange={(e) => setField("html", e.target.value)} rows={5} style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} /></Field>
@@ -437,19 +505,37 @@ function OptionsEditor({ options, targets, steps, onChange, onTargets }: {
 }
 
 /* ── step inspector ─────────────────────────────────────── */
-function StepInspector({ step, theme, setStepField, setStepBg, setTheme, onDeleteStep, canDelete }: {
-  step: Step; theme: QuizDoc["theme"];
+function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, onDeleteStep, canDelete }: {
+  step: Step; theme: QuizDoc["theme"]; card: CardCfg;
   setStepField: <K extends keyof Step>(k: K, v: Step[K]) => void;
   setStepBg: (p: Partial<Step["bg"]>) => void;
   setTheme: (p: Partial<QuizDoc["theme"]>) => void;
+  setCard: (p: Partial<CardCfg>) => void;
   onDeleteStep: () => void; canDelete: boolean;
 }) {
+  const free = step.layout === "free";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
         <div style={{ fontSize: 13.5, fontWeight: 600 }}>{step.kind === "cover" ? "Обложка" : step.kind === "contact" ? "Форма контактов" : "Шаг-вопрос"}</div>
         <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 2 }}>Кликните блок на холсте, чтобы настроить его</div>
       </div>
+
+      <Section title="Окно квиза (размер)">
+        <Slider label="Ширина окна" v={card.width} min={300} max={760} unit="px" onChange={(v) => setCard({ width: v })} />
+        <Slider label="Мин. высота" v={card.minHeight} min={0} max={720} unit="px" onChange={(v) => setCard({ minHeight: v })} />
+        <Slider label="Отступ ↔" v={card.padX} min={0} max={64} unit="px" onChange={(v) => setCard({ padX: v })} />
+        <Slider label="Отступ ↕" v={card.padY} min={0} max={64} unit="px" onChange={(v) => setCard({ padY: v })} />
+        <Slider label="Скругление окна" v={card.radius} min={0} max={40} unit="px" onChange={(v) => setCard({ radius: v })} />
+      </Section>
+
+      <Section title="Размещение блоков на шаге">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, color: "#374151" }}>Свободное (тянуть блоки мышью)</span>
+          <Toggle on={free} onClick={() => setStepField("layout", free ? "flow" : "free")} />
+        </div>
+        <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>{free ? "Блоки двигаются и меняют размер мышью. Задайте мин. высоту окна выше." : "Блоки идут в столбик сверху вниз."}</div>
+      </Section>
 
       <Section title="Фон шага">
         <Field label="Тип"><Segmented value={step.bg.type} onChange={(v) => setStepBg({ type: v as "color" | "image" })} options={[["color", "Цвет"], ["image", "Картинка"]]} /></Field>

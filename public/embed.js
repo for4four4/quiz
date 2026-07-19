@@ -22,7 +22,7 @@
   var DEF = {
     slideAnim: "slideUp", openAnim: "zoom",
     button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: "#28559c", color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
-    display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", progressOn: true, progressStyle: "line", progressColor: "#28559c" }
+    display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", popupImages: [], position: "center", progressOn: true, progressStyle: "line", progressColor: "#28559c" }
   };
 
   function injectKeyframes() {
@@ -135,13 +135,30 @@
     step();
   }
 
+  function posAlign(p) {
+    if (p === "br") return "align-items:flex-end;justify-content:flex-end;";
+    if (p === "bl") return "align-items:flex-end;justify-content:flex-start;";
+    if (p === "tr") return "align-items:flex-start;justify-content:flex-end;";
+    if (p === "tl") return "align-items:flex-start;justify-content:flex-start;";
+    return "align-items:center;justify-content:center;";
+  }
+
   function openPopup(quiz, cfg) {
     var dim = (cfg.display.dim / 100).toFixed(2);
-    var bg = cfg.display.popupBg && cfg.display.popupBg !== "transparent" ? cfg.display.popupBg : "rgba(15,23,42," + dim + ")";
-    var overlay = el("div", "position:fixed;inset:0;z-index:99999;background:" + bg + ";display:flex;align-items:center;justify-content:center;padding:20px;");
-    overlay.onclick = function (e) { if (e.target === overlay) document.body.removeChild(overlay); };
+    var imgs = cfg.display.popupImages || [];
+    var baseBg = imgs.length ? "#000" : (cfg.display.popupBg && cfg.display.popupBg !== "transparent" ? cfg.display.popupBg : "rgba(15,23,42," + dim + ")");
+    var overlay = el("div", "position:fixed;inset:0;z-index:99999;background:" + baseBg + ";display:flex;padding:24px;box-sizing:border-box;" + posAlign(cfg.display.position));
+    overlay.onclick = function (e) { if (e.target === overlay || e.target === dimLayer || e.target === imgEl) document.body.removeChild(overlay); };
+
+    var imgEl = null, dimLayer = null;
+    if (imgs.length) {
+      imgEl = el("img", "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;");
+      imgEl.src = imgs[0]; overlay.appendChild(imgEl);
+      dimLayer = el("div", "position:absolute;inset:0;background:rgba(15,23,42," + dim + ");z-index:-1;"); overlay.appendChild(dimLayer);
+      if (imgs.length > 1) { var k = 0; setInterval(function () { k = (k + 1) % imgs.length; imgEl.src = imgs[k]; }, 3500); }
+    }
     var openKf = ANIM[cfg.openAnim] || "";
-    var box = el("div", "width:100%;max-width:440px;" + (openKf ? "animation:" + openKf + " .55s cubic-bezier(.2,.8,.3,1);" : ""));
+    var box = el("div", "width:100%;max-width:440px;position:relative;" + (openKf ? "animation:" + openKf + " .55s cubic-bezier(.2,.8,.3,1);" : ""));
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     render(box, quiz, cfg);
