@@ -7,8 +7,21 @@ export const dynamic = "force-dynamic";
 
 type QuizRow = { id: number; slug: string; name: string; status: string; steps: unknown; design: unknown };
 
+// Транслитерация кириллицы в латиницу — чистые ASCII-URL (/q/kuhni-...).
+const TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
 function slugify(name: string): string {
-  const base = name.toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 40) || "quiz";
+  const base = name
+    .toLowerCase()
+    .replace(/[а-яё]/g, (ch) => TRANSLIT[ch] ?? "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 40) || "quiz";
   return `${base}-${Math.random().toString(36).slice(2, 7)}`;
 }
 

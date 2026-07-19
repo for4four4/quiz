@@ -12,7 +12,32 @@
 - React 19 + TypeScript
 - Tailwind CSS v4 (токены дизайна в `app/globals.css`)
 
-## Запуск
+## Запуск через Docker (рекомендуется — одна команда)
+
+На чистом сервере Ubuntu достаточно установленного Docker. Поднимает сразу
+**PostgreSQL + сайт**, схема БД применяется автоматически:
+
+```bash
+git clone <repo> && cd quiz
+cp .env.example .env     # по желанию: задать JWT_SECRET, POLZA_API_KEY и др.
+docker compose up -d --build
+```
+
+Сайт будет доступен на `http://<сервер>:3000` (порт меняется через `APP_PORT`
+в `.env`). Данные БД и загруженные файлы хранятся в docker-томах `pgdata`
+и `uploads` и переживают перезапуск.
+
+```bash
+docker compose logs -f app      # логи приложения
+docker compose down             # остановить (данные сохранятся)
+docker compose down -v          # остановить и удалить данные
+```
+
+> Для боевого сервера обязательно задайте в `.env` свой `JWT_SECRET`
+> (длинная случайная строка) и, если нужен ИИ, `POLZA_API_KEY`.
+> HTTPS удобно повесить сверху через nginx / Caddy как reverse-proxy.
+
+## Запуск без Docker (для разработки)
 
 ```bash
 npm install
@@ -64,7 +89,7 @@ public/uploads/     — SVG-иконки интеграций
 - [x] Аутентификация (JWT в httpOnly-cookie): `POST /api/auth?action=register|login|logout`, `GET /api/auth`
 - [x] ИИ-генерация квиза на Polza.ai: `POST /api/ai/generate`
 - [x] CRUD квизов: `/api/quizzes`, `/api/quizzes/[id]`
-- [x] Публичный квиз: `GET /api/public/quiz/[slug]`
+- [x] Публичный квиз: `GET /api/public/quiz/[slug]` + страница-рантайм `/q/[slug]` (прямая ссылка)
 - [x] Приём заявки (скоринг + обобщение ИИ + диспатч в интеграции): `POST /api/public/lead`
 - [x] Интеграции: Telegram / VK / MAX / вебхуки (`lib/server/integrations.ts`)
 - [x] Виджет для встраивания: `public/embed.js`

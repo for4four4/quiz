@@ -14,7 +14,9 @@ export async function setSessionCookie(s: Session): Promise<void> {
   const store = await cookies();
   store.set(COOKIE, signSession(s), {
     httpOnly: true,
-    secure: true,
+    // Secure-cookie только под HTTPS: иначе куку не отдаст плейн-HTTP
+    // (локальный docker / сервер без TLS) и вход бы не работал.
+    secure: env.publicOrigin.startsWith("https://"),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,

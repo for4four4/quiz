@@ -1,0 +1,59 @@
+# Квалифай — полный стек в один запуск:
+#   docker compose up -d --build
+#
+# Поднимает PostgreSQL + Next.js-приложение. Схема БД применяется
+# автоматически при первом обращении к API (ensureSchema).
+#
+# Секреты и ключи переопределяются через файл .env рядом с этим файлом
+# (см. .env.example). Значения ниже — безопасные значения по умолчанию,
+# чтобы сайт поднялся «из коробки». Для боевого сервера ОБЯЗАТЕЛЬНО
+# задайте свой JWT_SECRET и POLZA_API_KEY в .env.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qvalify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qvalify}
+      POSTGRES_DB: ${POSTGRES_DB:-qvalify}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qvalify} -d ${POSTGRES_DB:-qvalify}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER:-qvalify}:${POSTGRES_PASSWORD:-qvalify}@db:5432/${POSTGRES_DB:-qvalify}
+      JWT_SECRET: ${JWT_SECRET:-change-me-please-use-a-long-random-string}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      UPLOAD_DIR: /app/uploads
+      # Polza.ai — ИИ-генерация квизов и обобщение лидов (необязательно для запуска)
+      POLZA_API_KEY: ${POLZA_API_KEY:-}
+      POLZA_BASE_URL: ${POLZA_BASE_URL:-https://polza.ai/api/v1}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-anthropic/claude-haiku-4.5}
+      LLM_MODEL_SMART: ${LLM_MODEL_SMART:-anthropic/claude-sonnet-4.6}
+      # Интеграции-мессенджеры (необязательно)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      VK_TOKEN: ${VK_TOKEN:-}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - uploads:/app/uploads
+
+volumes:
+  pgdata:
+  uploads:

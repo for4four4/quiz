@@ -22,7 +22,9 @@
 - Схема БД — `db/schema.sql`, применяется идемпотентно через `ensureSchema()`
 - API: `/api/auth`, `/api/ai/generate`, `/api/quizzes[/id]`,
   `/api/public/quiz/[slug]`, `/api/public/lead`
-- Публичный виджет — `public/embed.js`
+- Публичный рантайм квиза — страница `/q/[slug]` (`components/quiz/QuizRuntime.tsx`)
+  и встраиваемый виджет `public/embed.js`
+- Слаги квизов — только ASCII (транслит кириллицы в `slugify`, `app/api/quizzes/route.ts`)
 - Route Handlers с `pg`/`jsonwebtoken` требуют `runtime = "nodejs"`
 - Ключи и БД — только через `.env` (см. `.env.example`), в репозиторий не коммитятся
 
@@ -32,7 +34,12 @@
 npm run dev      # разработка
 npm run build    # сборка (обязательно проверять перед коммитом)
 npm start        # прод-запуск
+
+docker compose up -d --build   # весь стек (Postgres + сайт) в один запуск
 ```
+
+Docker: `Dockerfile` (multi-stage, `output: "standalone"`) + `docker-compose.yml`
+(поднимает postgres и приложение, схема применяется через `ensureSchema`).
 
 ## Соглашения
 
