@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 export type Step = { question: string; options?: string[] };
 export type PublicQuiz = {
@@ -31,6 +31,33 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+
+  // Трекинг воронки: open / step / contact (best-effort, не блокирует квиз)
+  const sessionRef = useRef<string>("");
+  const trackedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    sessionRef.current = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }, []);
+  const track = (type: "open" | "step" | "contact", step?: number) => {
+    const key = type === "step" ? `step${step}` : type;
+    if (trackedRef.current.has(key)) return;
+    trackedRef.current.add(key);
+    try {
+      fetch("/api/public/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug: quiz.slug, type, step, source: "прямая ссылка", session: sessionRef.current }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  };
+  useEffect(() => { track("open"); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (idx >= 0 && idx < steps.length) track("step", idx);
+    else if (idx >= steps.length) track("contact");
+  }, [idx, steps.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const total = steps.length + 1; // вопросы + форма
   const progress =

@@ -15,9 +15,24 @@
   var selector = script.getAttribute("data-selector");
   var origin = new URL(script.src).origin;
   var source = selector ? "встроенный блок" : "плавающая кнопка";
+  var session = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var tracked = {};
 
   function api(path, opts) {
     return fetch(origin + path, opts).then(function (r) { return r.json(); });
+  }
+
+  // Трекинг воронки (best-effort, не блокирует квиз)
+  function track(type, stepIdx) {
+    var key = type === "step" ? "step" + stepIdx : type;
+    if (tracked[key]) return;
+    tracked[key] = 1;
+    try {
+      fetch(origin + "/api/public/event", {
+        method: "POST", headers: { "content-type": "application/json" }, keepalive: true,
+        body: JSON.stringify({ slug: slug, type: type, step: stepIdx, source: source, session: session })
+      }).catch(function () {});
+    } catch (e) { /* ignore */ }
   }
 
   function el(tag, style, text) {
@@ -35,8 +50,11 @@
     var card = el("div", "font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:420px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 12px 40px rgba(17,24,39,.12);padding:28px;box-sizing:border-box;");
     container.appendChild(card);
 
+    track("open");
+
     function step() {
       card.innerHTML = "";
+      if (idx < steps.length) track("step", idx); else track("contact");
       var bar = el("div", "height:5px;background:#eceef2;border-radius:999px;overflow:hidden;margin-bottom:18px;");
       var fill = el("div", "height:100%;background:#28559c;border-radius:999px;width:" + Math.round(((idx) / (steps.length + 1)) * 100) + "%;");
       bar.appendChild(fill); card.appendChild(bar);

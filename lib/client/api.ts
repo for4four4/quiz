@@ -49,6 +49,16 @@ export type Integration = {
   enabled: boolean;
 };
 
+export type PerQuizStat = { open: number; start: number; contact: number; lead: number; steps: Record<string, number> };
+export type Stats = {
+  days: number;
+  totals: { open: number; start: number; contact: number; lead: number };
+  bars: { d: string; v: number }[];
+  sources: [string, number][];
+  hot: { name: string; score: number; heat: string }[];
+  perQuiz: Record<string, PerQuizStat>;
+};
+
 async function j<T>(res: Response): Promise<T> {
   const data = (await res.json()) as T & { error?: string };
   if (!res.ok) throw new Error((data as { error?: string }).error || "Ошибка запроса");
@@ -74,6 +84,8 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => j<{ quiz: Quiz }>(r)),
   deleteQuiz: (id: string) => fetch(`/api/quizzes/${id}`, { method: "DELETE" }).then((r) => j(r)),
+
+  stats: () => fetch("/api/stats").then((r) => j<Stats>(r)),
 
   leads: () => fetch("/api/leads").then((r) => j<{ leads: Lead[] }>(r)),
   setLeadStatus: (id: string, status: string) =>

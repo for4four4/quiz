@@ -62,6 +62,12 @@ export async function POST(req: Request) {
       [quiz.id, b.name || "", b.phone, b.email || "", JSON.stringify(answers), b.source || "прямая ссылка", score, heat, summary]
     );
 
+    // Событие воронки "lead" (best-effort, не влияет на приём заявки)
+    await query(
+      "INSERT INTO events (quiz_id,type,source) VALUES ($1,'lead',$2)",
+      [quiz.id, b.source || "прямая ссылка"]
+    ).catch(() => {});
+
     // Диспатч в интеграции пользователя
     const integrations = await query<{ kind: string; config: Record<string, string>; enabled: boolean }>(
       "SELECT kind,config,enabled FROM integrations WHERE user_id=$1 AND enabled=true",

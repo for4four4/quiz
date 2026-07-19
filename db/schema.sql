@@ -51,3 +51,16 @@ CREATE TABLE IF NOT EXISTS integrations (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, kind)
 );
+
+-- События посетителей для воронки и аналитики шагов
+CREATE TABLE IF NOT EXISTS events (
+  id          BIGSERIAL PRIMARY KEY,
+  quiz_id     BIGINT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL,                  -- open | step | contact | lead
+  step        INTEGER,                        -- индекс вопроса для type=step
+  source      TEXT NOT NULL DEFAULT '',       -- встроенный блок | плавающая кнопка | прямая ссылка
+  session     TEXT NOT NULL DEFAULT '',       -- анонимный id сессии посетителя
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_events_quiz ON events(quiz_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(quiz_id, type);

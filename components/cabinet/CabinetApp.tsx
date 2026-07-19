@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Reac
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { routes } from "@/lib/nav";
-import { api, type Integration, type Lead, type Me, type Quiz } from "@/lib/client/api";
-import { bars, funnel, dropSteps, columns, integDefs, integList, navDef, heat as heatMap } from "./data";
+import { api, type Integration, type Lead, type Me, type Quiz, type Stats } from "@/lib/client/api";
+import { columns, integDefs, integList, navDef, heat as heatMap } from "./data";
 
 const INTEG_KINDS = ["amocrm", "bitrix24", "telegram", "max", "vk", "webhook", "metrika", "calltracking"];
 const STATUS_ORDER = ["new", "work", "done", "rejected"];
@@ -72,6 +72,7 @@ export function CabinetApp() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [tab, setTab] = useState<Tab>("dash");
@@ -112,10 +113,11 @@ export function CabinetApp() {
   const aiTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadData = useCallback(async () => {
-    const [q, l, ig] = await Promise.all([api.quizzes(), api.leads(), api.integrations()]);
+    const [q, l, ig, st] = await Promise.all([api.quizzes(), api.leads(), api.integrations(), api.stats().catch(() => null)]);
     setQuizzes(q.quizzes);
     setLeads(l.leads);
     setIntegrations(ig.integrations);
+    setStats(st);
   }, []);
 
   useEffect(() => {
@@ -306,7 +308,9 @@ export function CabinetApp() {
       <div className="kc-main" style={{ flex: 1, minWidth: 0, padding: "28px 32px", boxSizing: "border-box" }}>
         {tab === "dash" && (
           <Dashboard
-            kpis={buildKpis(quizzes, leads)}
+            kpis={buildKpis(stats, leads)}
+            stats={stats}
+            leads={leads}
             widgets={widgets}
             onOpenWidget={() => setWOpen(true)}
             onNewQuiz={() => setTab("quizzes")}
@@ -327,6 +331,7 @@ export function CabinetApp() {
           <LeadsSection
             quizzes={quizzes}
             leads={leads}
+            stats={stats}
             crmQuiz={crmQuiz}
             setCrmQuiz={setCrmQuiz}
             crmTab={crmTab}
@@ -521,22 +526,27 @@ function usagePct(used: number, limit?: number): number {
   if (!limit) return 0;
   return Math.min(100, Math.round((used / limit) * 100));
 }
-function buildKpis(quizzes: Quiz[], leads: Lead[]) {
-  const weekAgo = Date.now() - 7 * 864e5;
-  const week = leads.filter((l) => new Date(l.created_at).getTime() >= weekAgo).length;
+function fmtNum(n: number): string {
+  return n.toLocaleString("ru-RU");
+}
+function buildKpis(stats: Stats | null, leads: Lead[]) {
+  const t = stats?.totals;
+  const opens = t?.open ?? 0;
+  const leadN = t?.lead ?? leads.length;
   const hot = leads.filter((l) => l.heat === "hot").length;
-  const active = quizzes.filter((q) => q.status === "active").length;
+  const conv = opens ? (Math.round((leadN / opens) * 1000) / 10).toLocaleString("ru-RU") + "%" : "—";
+  const days = stats?.days ?? 7;
   return [
-    { label: "Заявки всего", value: String(leads.length), delta: `${active} активных квизов`, deltaColor: "#6b7280" },
-    { label: "За 7 дней", value: String(week), delta: "новых заявок", deltaColor: "#166534" },
-    { label: "Горячие лиды", value: String(hot), delta: "по ИИ-скорингу", deltaColor: "#c2410c" },
-    { label: "Квизов", value: String(quizzes.length), delta: `${quizzes.length - active} черновиков`, deltaColor: "#6b7280" },
+    { label: "Показы квиза", value: fmtNum(opens), delta: `за ${days} дней`, deltaColor: "#6b7280" },
+    { label: "Начали квиз", value: fmtNum(t?.start ?? 0), delta: "дошли до 1-го вопроса", deltaColor: "#166534" },
+    { label: "Заявки", value: fmtNum(leadN), delta: `${hot} горячих`, deltaColor: "#c2410c" },
+    { label: "Конверсия в заявку", value: conv, delta: "заявка / показ", deltaColor: "#166534" },
   ];
 }
 
 /* ---------- Sections ---------- */
 
-function Dashboard({ kpis, widgets, onOpenWidget, onNewQuiz, onRemove, quizNames }: { kpis: { label: string; value: string; delta: string; deltaColor: string }[]; widgets: { t: string; q: number }[]; onOpenWidget: () => void; onNewQuiz: () => void; onRemove: (i: number) => void; quizNames: string[] }) {
+function Dashboard({ kpis, stats, leads, widgets, onOpenWidget, onNewQuiz, onRemove, quizNames }: { kpis: { label: string; value: string; delta: string; deltaColor: string }[]; stats: Stats | null; leads: Lead[]; widgets: { t: string; q: number }[]; onOpenWidget: () => void; onNewQuiz: () => void; onRemove: (i: number) => void; quizNames: string[] }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
@@ -567,23 +577,29 @@ function Dashboard({ kpis, widgets, onOpenWidget, onNewQuiz, onRemove, quizNames
               <div style={{ fontSize: 14, fontWeight: 600 }}>{widgetTitles[w.t]}</div>
               <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{quizNames[w.q] ?? "Все квизы"}</div>
             </div>
-            <WidgetBody type={w.t} />
+            <WidgetBody type={w.t} stats={stats} leads={leads} />
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 16 }}>Графики виджетов — демонстрационные: детальная аналитика по шагам появится с трекингом показов.</div>
     </div>
   );
 }
 
-function WidgetBody({ type }: { type: string }) {
+function WidgetEmpty() {
+  return <div style={{ fontSize: 12.5, color: "#c4c8cf", padding: "18px 0", textAlign: "center" }}>Пока нет данных за период</div>;
+}
+
+function WidgetBody({ type, stats, leads }: { type: string; stats: Stats | null; leads: Lead[] }) {
   if (type === "bars") {
+    const data = stats?.bars ?? [];
+    const max = Math.max(1, ...data.map((b) => b.v));
+    if (!data.some((b) => b.v > 0)) return <WidgetEmpty />;
     return (
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 140 }}>
-        {bars.map((b) => (
-          <div key={b.d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
+        {data.map((b, i) => (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
             <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>{b.v}</div>
-            <div style={{ width: "100%", maxWidth: 44, borderRadius: "8px 8px 4px 4px", background: b.color, height: b.h }} />
+            <div style={{ width: "100%", maxWidth: 44, borderRadius: "8px 8px 4px 4px", background: i === data.length - 1 ? "#28559c" : "rgba(40,85,156,0.35)", height: `${Math.round((b.v / max) * 100)}%`, minHeight: b.v ? 6 : 0 }} />
             <div style={{ fontSize: 11, color: "#9ca3af" }}>{b.d}</div>
           </div>
         ))}
@@ -591,43 +607,64 @@ function WidgetBody({ type }: { type: string }) {
     );
   }
   if (type === "funnel") {
+    const t = stats?.totals;
+    const open = t?.open ?? 0;
+    if (!t || open === 0) return <WidgetEmpty />;
+    const rows = [
+      { label: "Открыли квиз", n: t.open },
+      { label: "Начали (1-й вопрос)", n: t.start },
+      { label: "Дошли до контактов", n: t.contact },
+      { label: "Оставили заявку", n: t.lead },
+    ];
+    const conv = open ? Math.round((t.lead / open) * 1000) / 10 : 0;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {funnel.map((f) => (
-          <div key={f.label}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><span style={{ color: "#374151" }}>{f.label}</span><span style={{ color: "#6b7280", fontWeight: 600 }}>{f.n}</span></div>
-            <div style={{ height: 8, background: "#f3f4f6", borderRadius: 9999, overflow: "hidden" }}><div style={{ height: "100%", borderRadius: 9999, background: "#28559c", opacity: f.op, width: f.w }} /></div>
-          </div>
-        ))}
-        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>Конверсия в заявку — <b style={{ color: "#166534" }}>24%</b></div>
+        {rows.map((f) => {
+          const w = Math.round((f.n / open) * 100);
+          return (
+            <div key={f.label}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}><span style={{ color: "#374151" }}>{f.label}</span><span style={{ color: "#6b7280", fontWeight: 600 }}>{fmtNum(f.n)}</span></div>
+              <div style={{ height: 8, background: "#f3f4f6", borderRadius: 9999, overflow: "hidden" }}><div style={{ height: "100%", borderRadius: 9999, background: "#28559c", opacity: Math.max(0.35, w / 100), width: `${w}%` }} /></div>
+            </div>
+          );
+        })}
+        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>Конверсия в заявку — <b style={{ color: "#166534" }}>{conv.toLocaleString("ru-RU")}%</b></div>
       </div>
     );
   }
   if (type === "sources") {
+    const src = stats?.sources ?? [];
+    if (src.length === 0) return <WidgetEmpty />;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12.5 }}>
-        {[["Встроенный блок", "29"], ["Плавающая кнопка", "17"], ["Прямая ссылка", "6"]].map(([k, v]) => (
+        {src.map(([k, v]) => (
           <div key={k} style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>{k}</span><b>{v}</b></div>
         ))}
       </div>
     );
   }
   if (type === "hot") {
+    const hot = stats?.hot ?? [];
+    if (hot.length === 0) return <WidgetEmpty />;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {[["Анна Соколова", "🔥 87", "rgba(194,65,12,0.10)", "#c2410c"], ["Ольга Черных", "🔥 78", "rgba(194,65,12,0.10)", "#c2410c"], ["Дмитрий Ефимов", "61", "rgba(40,85,156,0.10)", "#28559c"]].map(([n, s, bg, col]) => (
-          <div key={n} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5 }}>
-            <span style={{ fontWeight: 500 }}>{n}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 9999, background: bg, color: col }}>{s}</span>
+        {hot.map((h, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5 }}>
+            <span style={{ fontWeight: 500 }}>{h.name}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 9999, background: "rgba(194,65,12,0.10)", color: "#c2410c" }}>🔥 {h.score}</span>
           </div>
         ))}
       </div>
     );
   }
+  // cr
+  const t = stats?.totals;
+  const open = t?.open ?? 0;
+  const conv = open ? Math.round((t!.lead / open) * 1000) / 10 : 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 38, fontWeight: 600, letterSpacing: "-0.03em" }}>6,2%</div>
-      <div style={{ fontSize: 12, color: "#166534", fontWeight: 500 }}>+0,8 п.п. к прошлой неделе</div>
+      <div style={{ fontSize: 38, fontWeight: 600, letterSpacing: "-0.03em" }}>{open ? conv.toLocaleString("ru-RU") + "%" : "—"}</div>
+      <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{fmtNum(t?.lead ?? leads.length)} заявок · {fmtNum(open)} показов</div>
     </div>
   );
 }
@@ -705,7 +742,26 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { q
   );
 }
 
-function LeadsSection({ quizzes, leads, crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { quizzes: Quiz[]; leads: Lead[]; crmQuiz: string | null; setCrmQuiz: (v: string | null) => void; crmTab: "board" | "anal"; setCrmTab: (v: "board" | "anal") => void; openLead: (id: string) => void }) {
+function shortLabel(q: string | undefined, i: number): string {
+  const t = (q || "").trim();
+  if (!t) return `Вопрос ${i + 1}`;
+  return t.length > 22 ? t.slice(0, 22) + "…" : t;
+}
+function buildDropSteps(pq: Stats["perQuiz"][string] | undefined, quiz: Quiz | undefined) {
+  const open = pq?.open ?? 0;
+  const rows: { label: string; n: number }[] = [{ label: "Обложка", n: open }];
+  (quiz?.steps ?? []).forEach((s, i) => rows.push({ label: shortLabel(s.question, i), n: pq?.steps?.[i] ?? 0 }));
+  rows.push({ label: "Контакты", n: pq?.contact ?? 0 });
+  rows.push({ label: "Заявка", n: pq?.lead ?? 0 });
+  const base = Math.max(1, open);
+  return rows.map((r, i) => {
+    const prev = i > 0 ? rows[i - 1].n : r.n;
+    const drop = i > 0 && prev > 0 ? Math.round((1 - r.n / prev) * 100) : 0;
+    return { label: r.label, n: r.n, drop, w: `${Math.round((r.n / base) * 100)}%`, op: Math.max(0.3, r.n / base), dropColor: drop >= 25 ? "#c2410c" : i === rows.length - 1 ? "#166534" : "#6b7280" };
+  });
+}
+
+function LeadsSection({ quizzes, leads, stats, crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { quizzes: Quiz[]; leads: Lead[]; stats: Stats | null; crmQuiz: string | null; setCrmQuiz: (v: string | null) => void; crmTab: "board" | "anal"; setCrmTab: (v: "board" | "anal") => void; openLead: (id: string) => void }) {
   const quizzesWithLeads = quizzes.filter((q) => leads.some((l) => l.quiz_id === q.id));
 
   if (crmQuiz === null) {
@@ -806,18 +862,22 @@ function LeadsSection({ quizzes, leads, crmQuiz, setCrmQuiz, crmTab, setCrmTab, 
         <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, alignItems: "start" }} className="qv-anal-grid">
           <div style={{ background: "#ffffff", borderRadius: 20, padding: 22, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Где выходят люди</div>
-            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 18 }}>Демонстрационные данные — трекинг шагов в разработке</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {dropSteps.map((d) => (
-                <div key={d.label}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5, marginBottom: 5 }}>
-                    <span style={{ fontWeight: 500 }}>{d.label}</span>
-                    <span style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{d.n} · <b style={{ color: d.dropColor }}>−{d.drop}</b>{d.time && <> · ⌀ {d.time}</>}</span>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 18 }}>{(stats?.perQuiz[crmQuiz!]?.open ?? 0)} открытий за {stats?.days ?? 7} дней</div>
+            {(stats?.perQuiz[crmQuiz!]?.open ?? 0) === 0 ? (
+              <div style={{ fontSize: 12.5, color: "#9ca3af", padding: "8px 0" }}>Данные воронки появятся, когда по опубликованному квизу пройдут посетители.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {buildDropSteps(stats?.perQuiz[crmQuiz!], quiz).map((d, i) => (
+                  <div key={i}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5, marginBottom: 5 }}>
+                      <span style={{ fontWeight: 500 }}>{d.label}</span>
+                      <span style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{d.n}{i > 0 && <> · <b style={{ color: d.dropColor }}>−{d.drop}%</b></>}</span>
+                    </div>
+                    <div style={{ height: 10, background: "#f3f4f6", borderRadius: 9999, overflow: "hidden", display: "flex" }}><div style={{ height: "100%", background: "#28559c", opacity: d.op, borderRadius: 9999, width: d.w }} /></div>
                   </div>
-                  <div style={{ height: 10, background: "#f3f4f6", borderRadius: 9999, overflow: "hidden", display: "flex" }}><div style={{ height: "100%", background: "#28559c", opacity: d.op, borderRadius: 9999, width: d.w }} /></div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
             <div style={{ background: "#ffffff", borderRadius: 20, padding: 22 }}>
