@@ -9,7 +9,7 @@ import {
   type Block, type BlockStyle, type BlockType, type QuizDoc, type QuizSettings, type Step,
 } from "@/lib/quiz/doc";
 import { ButtonShowEditor } from "./ButtonShowEditor";
-import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, panelLabel, Section, Segmented, Select, Slider, ta } from "./controls";
+import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, panelLabel, Section, Segmented, Select, Slider, ta, UploadField } from "./controls";
 
 const PALETTE: [BlockType, string, string][] = [
   ["heading", "T", "Заголовок"],
@@ -269,6 +269,7 @@ export function EditorApp() {
         <div style={{ width: 288, flexShrink: 0, background: "#fff", borderLeft: "1px solid #e9e9e9", overflowY: "auto", padding: "18px 16px", boxSizing: "border-box" }}>
           {block ? (
             <BlockInspector block={block} setStyle={setStyle} setField={setBlockField}
+              branchSteps={doc.steps.map((s, i) => ({ id: s.id, label: s.kind === "cover" ? "Обложка" : s.kind === "contact" ? "Контакты" : `Шаг ${i}` })).filter((x) => x.id !== step.id)}
               onDelete={() => deleteBlock(block.id)} onDup={() => duplicateBlock(block.id)}
               onUp={() => moveBlock(block.id, -1)} onDown={() => moveBlock(block.id, 1)} />
           ) : (
@@ -335,10 +336,11 @@ function CanvasBlock({ block, accent, selected, dragging, onSelect, onText, onOp
 }
 
 /* ── block inspector ────────────────────────────────────── */
-function BlockInspector({ block, setStyle, setField, onDelete, onDup, onUp, onDown }: {
+function BlockInspector({ block, setStyle, setField, branchSteps, onDelete, onDup, onUp, onDown }: {
   block: Block;
   setStyle: <K extends keyof BlockStyle>(k: K, v: BlockStyle[K]) => void;
   setField: <K extends keyof Block>(k: K, v: Block[K]) => void;
+  branchSteps: { id: string; label: string }[];
   onDelete: () => void; onDup: () => void; onUp: () => void; onDown: () => void;
 }) {
   const s = block.style;
@@ -361,7 +363,8 @@ function BlockInspector({ block, setStyle, setField, onDelete, onDup, onUp, onDo
           <Field label="Текст"><textarea value={block.text || ""} onChange={(e) => setField("text", e.target.value)} rows={2} style={ta} /></Field>
         )}
         {block.type === "options" && (
-          <OptionsEditor options={block.options || []} onChange={(o) => setField("options", o)} />
+          <OptionsEditor options={block.options || []} targets={block.targets || []} steps={branchSteps}
+            onChange={(o) => setField("options", o)} onTargets={(t) => setField("targets", t)} />
         )}
         {block.type === "input" && (
           <>
@@ -370,7 +373,7 @@ function BlockInspector({ block, setStyle, setField, onDelete, onDup, onUp, onDo
           </>
         )}
         {block.type === "image" && (
-          <Field label="URL картинки"><input value={block.src || ""} onChange={(e) => setField("src", e.target.value)} placeholder="https://…" style={inp} /></Field>
+          <Field label="Картинка (файл)"><UploadField value={block.src} onChange={(v) => setField("src", v)} /></Field>
         )}
         {block.type === "html" && (
           <Field label="HTML / встраивание"><textarea value={block.html || ""} onChange={(e) => setField("html", e.target.value)} rows={5} style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} /></Field>
@@ -403,13 +406,29 @@ function BlockInspector({ block, setStyle, setField, onDelete, onDup, onUp, onDo
   );
 }
 
-function OptionsEditor({ options, onChange }: { options: string[]; onChange: (o: string[]) => void }) {
+function OptionsEditor({ options, targets, steps, onChange, onTargets }: {
+  options: string[]; targets: string[]; steps: { id: string; label: string }[];
+  onChange: (o: string[]) => void; onTargets: (t: string[]) => void;
+}) {
+  const norm = (t: string[]) => { const n = [...t]; while (n.length < options.length) n.push(""); return n.slice(0, options.length); };
+  const setTarget = (i: number, v: string) => { const n = norm(targets); n[i] = v; onTargets(n); };
+  const removeAt = (i: number) => {
+    if (options.length <= 1) return;
+    onChange(options.filter((_, j) => j !== i));
+    onTargets(norm(targets).filter((_, j) => j !== i));
+  };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {options.map((o, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input value={o} onChange={(e) => onChange(options.map((x, j) => (j === i ? e.target.value : x)))} style={{ ...inp, flex: 1 }} />
-          <IconBtn title="Удалить" danger onClick={() => options.length > 1 && onChange(options.filter((_, j) => j !== i))}>✕</IconBtn>
+        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 5, border: "1px solid #f0f0f0", borderRadius: 10, padding: "8px 9px" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input value={o} onChange={(e) => onChange(options.map((x, j) => (j === i ? e.target.value : x)))} style={{ ...inp, flex: 1 }} />
+            <IconBtn title="Удалить" danger onClick={() => removeAt(i)}>✕</IconBtn>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0 }}>→ ведёт на</span>
+            <Select value={(targets[i] || "")} onChange={(v) => setTarget(i, v)} options={[["", "Следующий шаг"], ...steps.map((s) => [s.id, s.label] as [string, string])]} />
+          </div>
         </div>
       ))}
       <div onClick={() => onChange([...options, `Вариант ${options.length + 1}`])} style={addRow}>+ Вариант</div>
@@ -436,7 +455,7 @@ function StepInspector({ step, theme, setStepField, setStepBg, setTheme, onDelet
         <Field label="Тип"><Segmented value={step.bg.type} onChange={(v) => setStepBg({ type: v as "color" | "image" })} options={[["color", "Цвет"], ["image", "Картинка"]]} /></Field>
         {step.bg.type === "color"
           ? <ColorRow label="Цвет фона" value={step.bg.value} onChange={(v) => setStepBg({ value: v })} />
-          : <Field label="URL картинки"><input value={step.bg.value} onChange={(e) => setStepBg({ value: e.target.value })} placeholder="https://…" style={inp} /></Field>}
+          : <Field label="Фон-картинка (файл)"><UploadField value={step.bg.value} onChange={(v) => setStepBg({ value: v })} /></Field>}
       </Section>
 
       <Section title="Аналитика шага">

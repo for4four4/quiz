@@ -103,10 +103,19 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   const stepHeading = () => step.blocks.find((b) => b.type === "heading")?.text || step.title || "Вопрос";
   const advance = () => setI((v) => Math.min(steps.length - 1, v + 1));
 
-  const pickOption = (opt: string, goal?: string) => {
+  // Ветвление: переход на конкретный шаг по id (или следующий)
+  const goTo = (targetId?: string) => {
+    if (targetId) {
+      const idx = steps.findIndex((s) => s.id === targetId);
+      if (idx >= 0) { setI(idx); return; }
+    }
+    advance();
+  };
+
+  const pickOption = (opt: string, goal?: string, targetId?: string) => {
     if (step.kind === "question") setAnswers((prev) => [...prev.filter((p) => p.q !== stepHeading()), { q: stepHeading(), a: opt }]);
     fireGoal(goal);
-    advance();
+    goTo(targetId);
   };
 
   async function submit(goal?: string) {
@@ -169,7 +178,7 @@ function BlockView({ block, accent, contact, setContact, onPick, onButton, sendi
   accent: string;
   contact: { name: string; phone: string; email: string };
   setContact: (f: (c: { name: string; phone: string; email: string }) => { name: string; phone: string; email: string }) => void;
-  onPick: (opt: string, goal?: string) => void;
+  onPick: (opt: string, goal?: string, targetId?: string) => void;
   onButton: () => void;
   sending: boolean;
 }) {
@@ -232,7 +241,7 @@ function BlockView({ block, accent, contact, setContact, onPick, onButton, sendi
         {(block.options || []).map((opt, k) => (
           <button
             key={k}
-            onClick={() => onPick(opt, block.goal)}
+            onClick={() => onPick(opt, block.goal, block.targets?.[k])}
             onMouseOver={(e) => (e.currentTarget.style.borderColor = accent)}
             onMouseOut={(e) => (e.currentTarget.style.borderColor = s.borderColor || "#e5e7eb")}
             style={{ textAlign: "left", border: `1px solid ${s.borderColor || "#e5e7eb"}`, borderRadius: s.radius || 12, padding: "13px 15px", fontSize: s.fontSize, background: s.bg === "transparent" ? "#fff" : s.bg, color: s.color, cursor: "pointer", fontFamily: FONTS[s.font] || FONTS.system, transition: "border-color .15s" }}

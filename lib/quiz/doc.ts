@@ -28,9 +28,10 @@ export type Block = {
   type: BlockType;
   text?: string;                                  // heading / text / button
   options?: string[];                             // options
+  targets?: string[];                             // ветвление: id шага для каждого варианта ("" = следующий)
   field?: "name" | "phone" | "email" | "text";    // input
   placeholder?: string;                           // input
-  src?: string;                                   // image (URL)
+  src?: string;                                   // image (URL/загруженный файл)
   html?: string;                                  // html (свой HTML/встраивание)
   goal?: string;                                  // цель Метрики/коллтрекинга при клике
   style: BlockStyle;

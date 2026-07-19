@@ -95,6 +95,13 @@ export const api = {
       body: JSON.stringify({ status }),
     }).then((r) => j(r)),
 
+  upload: async (file: File): Promise<{ url: string }> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    return j<{ url: string }>(r);
+  },
+
   integrations: () => fetch("/api/integrations").then((r) => j<{ integrations: Integration[] }>(r)),
   saveIntegration: (kind: string, config: Record<string, string>, enabled = true) =>
     fetch("/api/integrations", {

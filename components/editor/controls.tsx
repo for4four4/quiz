@@ -1,6 +1,35 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { api } from "@/lib/client/api";
+
+/** Загрузка картинки файлом (не ссылкой): аплоад → возвращает URL. */
+export function UploadField({ value, onChange, preview = true }: { value?: string; onChange: (url: string) => void; preview?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const pick = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true); setErr("");
+    try { const { url } = await api.upload(f); onChange(url); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Ошибка загрузки"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      {preview && value && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt="" style={{ width: "100%", maxHeight: 120, objectFit: "cover", borderRadius: 10, marginBottom: 8, border: "1px solid #e5e7eb" }} />
+      )}
+      <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => pick(e.target.files?.[0])} />
+      <div style={{ display: "flex", gap: 8 }}>
+        <div onClick={() => ref.current?.click()} style={{ ...btnGhost, flex: 1, textAlign: "center", opacity: busy ? 0.6 : 1 }}>{busy ? "Загрузка…" : value ? "Заменить файл" : "Загрузить файл"}</div>
+        {value && <div onClick={() => onChange("")} style={{ ...btnGhost, color: "#991b1b" }}>Убрать</div>}
+      </div>
+      {err && <div style={{ fontSize: 11, color: "#b91c1c", marginTop: 5 }}>{err}</div>}
+    </div>
+  );
+}
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 14, display: "flex", flexDirection: "column", gap: 12 }}><div style={panelLabel}>{title}</div>{children}</div>;

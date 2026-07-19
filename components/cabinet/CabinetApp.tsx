@@ -775,6 +775,7 @@ function LeadsSection({ quizzes, leads, stats, crmQuiz, setCrmQuiz, crmTab, setC
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
           <div><h1 style={h1}>Заявки</h1><div style={subtitle}>Встроенная CRM · {leads.length} заявок</div></div>
+          {leads.length > 0 && <a href="/api/leads/export" style={{ ...pill, textDecoration: "none", color: "#111827", display: "inline-flex", alignItems: "center", gap: 7 }}>⬇ Экспорт CSV</a>}
         </div>
         {quizzesWithLeads.length === 0 ? (
           <EmptyState title="Заявок пока нет" text="Опубликуйте квиз и поделитесь ссылкой — заявки клиентов появятся здесь автоматически, со скорингом и обобщением ИИ." />
@@ -823,10 +824,13 @@ function LeadsSection({ quizzes, leads, stats, crmQuiz, setCrmQuiz, crmTab, setC
             <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 2 }}>{qLeads.length} заявок</div>
           </div>
         </div>
-        <div style={{ display: "flex", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 9999, padding: 3 }}>
-          {(["board", "anal"] as const).map((t) => (
-            <div key={t} onClick={() => setCrmTab(t)} style={{ borderRadius: 9999, padding: "7px 18px", fontSize: 12.5, fontWeight: 500, cursor: "pointer", background: crmTab === t ? "#111827" : "transparent", color: crmTab === t ? "#ffffff" : "#374151", transition: "background .2s" }}>{t === "board" ? "Канбан" : "Аналитика шагов"}</div>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {qLeads.length > 0 && <a href={`/api/leads/export?quiz=${crmQuiz}`} style={{ ...pill, textDecoration: "none", color: "#111827", display: "inline-flex", alignItems: "center", gap: 7 }}>⬇ CSV</a>}
+          <div style={{ display: "flex", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 9999, padding: 3 }}>
+            {(["board", "anal"] as const).map((t) => (
+              <div key={t} onClick={() => setCrmTab(t)} style={{ borderRadius: 9999, padding: "7px 18px", fontSize: 12.5, fontWeight: 500, cursor: "pointer", background: crmTab === t ? "#111827" : "transparent", color: crmTab === t ? "#ffffff" : "#374151", transition: "background .2s" }}>{t === "board" ? "Канбан" : "Аналитика шагов"}</div>
+            ))}
+          </div>
         </div>
       </div>
 

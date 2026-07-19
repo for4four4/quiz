@@ -33,6 +33,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Схема БД нужна в рантайме: ensureSchema() читает db/schema.sql
 COPY --from=builder /app/db ./db
 
+# Папка для загруженных картинок (UPLOAD_DIR) — пишет непривилегированный пользователь.
+# В docker-compose сюда монтируется том uploads, наследуя эти права.
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+
 USER nextjs
 EXPOSE 3000
 
