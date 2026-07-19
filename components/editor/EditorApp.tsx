@@ -3,19 +3,27 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
-import { api, type QuizDesign, type QuizStep } from "@/lib/client/api";
+import { api } from "@/lib/client/api";
+import {
+  blockCss, deriveSteps, docToDesign, FONT_LABELS, FONTS, migrateToDoc, newBlock,
+  type Block, type BlockStyle, type BlockType, type QuizDoc, type Step,
+} from "@/lib/quiz/doc";
 
-type Cover = { title: string; subtitle: string; benefits: string[] };
-type Contact = { title: string; bonus: string };
-type Sel = number; // -1 = обложка · 0..n-1 = вопросы · steps.length = контакты
+const PALETTE: [BlockType, string, string][] = [
+  ["heading", "T", "Заголовок"],
+  ["text", "¶", "Текст"],
+  ["options", "☰", "Варианты"],
+  ["input", "▭", "Поле"],
+  ["button", "◉", "Кнопка"],
+  ["image", "▣", "Картинка"],
+  ["html", "</>", "HTML/JS"],
+];
 
-const ACCENTS = ["#28559c", "#0F1F3C", "#166534", "#c2410c", "#7c3aed", "#111827"];
-const BGS = ["#ffffff", "#fafafa", "#f0f4fa", "#e8edf6", "#0F1F3C", "#111827"];
-
-function normSteps(raw: QuizStep[]): { question: string; options: string[] }[] {
-  return (Array.isArray(raw) ? raw : [])
-    .filter((s) => s && typeof s.question === "string")
-    .map((s) => ({ question: s.question || "", options: Array.isArray(s.options) ? s.options.filter(Boolean) : [] }));
+function starterDoc(): QuizDoc {
+  return migrateToDoc(
+    [{ question: "Что вас интересует?", options: ["Вариант 1", "Вариант 2"] }],
+    { accent: "#28559c", bg: "#ffffff", cover: { title: "Рассчитайте за 1 минуту", subtitle: "Ответьте на пару вопросов", benefits: ["Быстро", "Бесплатно"] }, contactForm: { title: "Оставьте контакты", bonus: "Скидка 10%" } }
+  );
 }
 
 export function EditorApp() {
@@ -23,19 +31,16 @@ export function EditorApp() {
   const [name, setName] = useState("Новый квиз");
   const [slug, setSlug] = useState("");
   const [status, setStatus] = useState("draft");
-  const [cover, setCover] = useState<Cover>({ title: "Рассчитайте стоимость за 1 минуту", subtitle: "Ответьте на пару вопросов — получите точный расчёт и бонус", benefits: ["Бесплатно", "Быстро", "Точный расчёт"] });
-  const [steps, setSteps] = useState<{ question: string; options: string[] }[]>([{ question: "Что вас интересует?", options: ["Вариант 1", "Вариант 2"] }]);
-  const [contact, setContact] = useState<Contact>({ title: "Оставьте контакты", bonus: "Скидка 10%" });
-  const [accent, setAccent] = useState("#28559c");
-  const [bg, setBg] = useState("#ffffff");
-  const [sel, setSel] = useState<Sel>(-1);
+  const [doc, setDoc] = useState<QuizDoc>(starterDoc);
+  const [selStep, setSelStep] = useState(0);
+  const [selBlock, setSelBlock] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [dirty, setDirty] = useState(false);
 
   const idRef = useRef<string | null>(null);
-  const designExtraRef = useRef<QuizDesign>({});
-  const dragFrom = useRef<number | null>(null);
+  const dragBlock = useRef<string | null>(null);
+  const dragStep = useRef<number | null>(null);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
@@ -43,118 +48,108 @@ export function EditorApp() {
     idRef.current = id;
     api.quiz(id)
       .then(({ quiz }) => {
-        setName(quiz.name);
-        setSlug(quiz.slug);
-        setStatus(quiz.status);
-        const ns = normSteps(quiz.steps);
-        if (ns.length) setSteps(ns);
-        const d = quiz.design || {};
-        designExtraRef.current = d;
-        if (d.cover) setCover({ title: d.cover.title || "", subtitle: d.cover.subtitle || "", benefits: d.cover.benefits || [] });
-        if (d.contactForm) setContact({ title: d.contactForm.title || "Оставьте контакты", bonus: d.contactForm.bonus || "" });
-        if (d.accent) setAccent(d.accent);
-        if (d.bg) setBg(d.bg);
+        setName(quiz.name); setSlug(quiz.slug); setStatus(quiz.status);
+        const d = quiz.design as { doc?: QuizDoc };
+        const built = d?.doc && Array.isArray(d.doc.steps) && d.doc.steps.length ? d.doc : migrateToDoc(quiz.steps, quiz.design);
+        setDoc(built);
       })
       .catch(() => { /* демо-режим */ })
       .finally(() => setLoading(false));
   }, []);
 
   const touch = () => setDirty(true);
+  const step = doc.steps[selStep];
+  const block = step?.blocks.find((b) => b.id === selBlock) || null;
 
-  // ── мутации ─────────────────────────────────────────────
-  const setStep = (i: number, patch: Partial<{ question: string; options: string[] }>) => {
-    setSteps((s) => s.map((st, j) => (j === i ? { ...st, ...patch } : st))); touch();
+  // ── мутации doc ─────────────────────────────────────────
+  const patchStep = (si: number, fn: (s: Step) => Step) => { setDoc((d) => ({ ...d, steps: d.steps.map((s, i) => (i === si ? fn(s) : s)) })); touch(); };
+  const patchBlock = (bid: string, fn: (b: Block) => Block) => patchStep(selStep, (s) => ({ ...s, blocks: s.blocks.map((b) => (b.id === bid ? fn(b) : b)) }));
+  const setStyle = <K extends keyof BlockStyle>(k: K, v: BlockStyle[K]) => { if (block) patchBlock(block.id, (b) => ({ ...b, style: { ...b.style, [k]: v } })); };
+  const setBlockField = <K extends keyof Block>(k: K, v: Block[K]) => { if (block) patchBlock(block.id, (b) => ({ ...b, [k]: v })); };
+
+  const addBlock = (type: BlockType) => {
+    const nb = newBlock(type, doc.theme.accent);
+    setDoc((d) => ({ ...d, steps: d.steps.map((s, i) => (i === selStep ? { ...s, blocks: [...s.blocks, nb] } : s)) }));
+    setSelBlock(nb.id); touch();
   };
-  const addQuestion = () => {
-    setSteps((s) => [...s, { question: "Новый вопрос", options: ["Вариант 1", "Вариант 2"] }]);
-    setSel(steps.length); touch();
+  const deleteBlock = (bid: string) => { patchStep(selStep, (s) => ({ ...s, blocks: s.blocks.filter((b) => b.id !== bid) })); setSelBlock(null); };
+  const duplicateBlock = (bid: string) => {
+    const src = step.blocks.find((b) => b.id === bid); if (!src) return;
+    const copy = { ...src, id: Math.random().toString(36).slice(2, 9), style: { ...src.style } };
+    patchStep(selStep, (s) => { const idx = s.blocks.findIndex((b) => b.id === bid); const n = [...s.blocks]; n.splice(idx + 1, 0, copy); return { ...s, blocks: n }; });
+    setSelBlock(copy.id);
   };
-  const removeQuestion = (i: number) => {
-    if (steps.length <= 1) { alert("В квизе должен остаться хотя бы один вопрос."); return; }
-    setSteps((s) => s.filter((_, j) => j !== i));
-    setSel((cur) => (cur >= steps.length - 1 ? steps.length - 2 : cur)); touch();
+  const moveBlock = (bid: string, dir: -1 | 1) => patchStep(selStep, (s) => {
+    const i = s.blocks.findIndex((b) => b.id === bid); const to = i + dir;
+    if (to < 0 || to >= s.blocks.length) return s;
+    const n = [...s.blocks]; [n[i], n[to]] = [n[to], n[i]]; return { ...s, blocks: n };
+  });
+  const dropBlock = (targetId: string) => {
+    const from = dragBlock.current; dragBlock.current = null;
+    if (!from || from === targetId) return;
+    patchStep(selStep, (s) => {
+      const fi = s.blocks.findIndex((b) => b.id === from); const ti = s.blocks.findIndex((b) => b.id === targetId);
+      if (fi < 0 || ti < 0) return s;
+      const n = [...s.blocks]; const [m] = n.splice(fi, 1); n.splice(ti, 0, m); return { ...s, blocks: n };
+    });
   };
-  const moveQuestion = (i: number, dir: -1 | 1) => {
-    const to = i + dir;
-    if (to < 0 || to >= steps.length) return;
-    setSteps((s) => { const n = [...s]; [n[i], n[to]] = [n[to], n[i]]; return n; });
-    setSel(to); touch();
+
+  const setStepField = <K extends keyof Step>(k: K, v: Step[K]) => patchStep(selStep, (s) => ({ ...s, [k]: v }));
+  const setStepBg = (patch: Partial<Step["bg"]>) => patchStep(selStep, (s) => ({ ...s, bg: { ...s.bg, ...patch } }));
+  const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
+
+  const addStep = () => {
+    const ns: Step = { id: Math.random().toString(36).slice(2, 9), kind: "question", title: "Новый вопрос", bg: { type: "color", value: doc.theme.bg }, blocks: [newBlock("heading", doc.theme.accent), newBlock("options", doc.theme.accent)] };
+    ns.blocks[0].text = "Новый вопрос";
+    setDoc((d) => { const contactIdx = d.steps.findIndex((s) => s.kind === "contact"); const insertAt = contactIdx >= 0 ? contactIdx : d.steps.length; const n = [...d.steps]; n.splice(insertAt, 0, ns); return { ...d, steps: n }; });
+    touch();
   };
-  const dropQuestion = (to: number) => {
-    const from = dragFrom.current;
-    dragFrom.current = null;
+  const deleteStep = (si: number) => {
+    if (doc.steps.length <= 1) return;
+    setDoc((d) => ({ ...d, steps: d.steps.filter((_, i) => i !== si) }));
+    setSelStep((cur) => Math.max(0, cur >= si ? cur - 1 : cur)); setSelBlock(null); touch();
+  };
+  const dropStep = (to: number) => {
+    const from = dragStep.current; dragStep.current = null;
     if (from === null || from === to) return;
-    setSteps((s) => { const n = [...s]; const [m] = n.splice(from, 1); n.splice(to, 0, m); return n; });
-    setSel(to); touch();
+    setDoc((d) => { const n = [...d.steps]; const [m] = n.splice(from, 1); n.splice(to, 0, m); return { ...d, steps: n }; });
+    setSelStep(to); touch();
   };
-
-  const setOption = (si: number, oi: number, v: string) => setStep(si, { options: steps[si].options.map((o, j) => (j === oi ? v : o)) });
-  const addOption = (si: number) => setStep(si, { options: [...steps[si].options, `Вариант ${steps[si].options.length + 1}`] });
-  const removeOption = (si: number, oi: number) => { if (steps[si].options.length <= 1) return; setStep(si, { options: steps[si].options.filter((_, j) => j !== oi) }); };
-
-  const setBenefit = (i: number, v: string) => { setCover((c) => ({ ...c, benefits: c.benefits.map((b, j) => (j === i ? v : b)) })); touch(); };
-  const addBenefit = () => { setCover((c) => ({ ...c, benefits: [...c.benefits, "Новое преимущество"] })); touch(); };
-  const removeBenefit = (i: number) => { setCover((c) => ({ ...c, benefits: c.benefits.filter((_, j) => j !== i) })); touch(); };
 
   // ── сохранение ──────────────────────────────────────────
   const persist = async (): Promise<string | null> => {
     setSaving(true);
-    const design: QuizDesign = {
-      ...designExtraRef.current,
-      cover: { title: cover.title, subtitle: cover.subtitle, benefits: cover.benefits },
-      contactForm: { title: contact.title, bonus: contact.bonus },
-      accent,
-      bg,
-    };
+    const design = docToDesign(doc);
+    const steps = deriveSteps(doc);
     try {
       if (idRef.current) {
         const { quiz } = await api.updateQuiz(idRef.current, { name, steps, design });
         setSlug(quiz.slug); setStatus(quiz.status);
-        designExtraRef.current = quiz.design || design;
       } else {
         const { quiz } = await api.createQuiz({ name, steps, design });
         idRef.current = quiz.id; setSlug(quiz.slug); setStatus(quiz.status);
-        designExtraRef.current = quiz.design || design;
         if (typeof window !== "undefined") window.history.replaceState(null, "", `${routes.editor}?id=${quiz.id}`);
       }
       setSavedAt(new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
       setDirty(false);
       return idRef.current;
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Не удалось сохранить");
-      return null;
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { alert(e instanceof Error ? e.message : "Не удалось сохранить"); return null; }
+    finally { setSaving(false); }
   };
   const publish = async () => {
-    const id = await persist();
-    if (!id) return;
+    const id = await persist(); if (!id) return;
     const next = status === "active" ? "draft" : "active";
-    try {
-      const { quiz } = await api.updateQuiz(id, { status: next });
-      setStatus(quiz.status); setSlug(quiz.slug);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Ошибка публикации");
-    }
+    try { const { quiz } = await api.updateQuiz(id, { status: next }); setStatus(quiz.status); setSlug(quiz.slug); }
+    catch (e) { alert(e instanceof Error ? e.message : "Ошибка"); }
   };
-  const preview = () => {
-    if (status === "active" && slug) window.open(`/q/${slug}`, "_blank");
-    else alert("Опубликуйте квиз, чтобы открыть публичную ссылку.");
-  };
+  const preview = () => { if (status === "active" && slug) window.open(`/q/${slug}`, "_blank"); else alert("Опубликуйте квиз, чтобы открыть публичную ссылку."); };
 
-  if (loading) {
-    return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#EFEFEF", color: "#6b7280", fontSize: 14, fontFamily: "-apple-system,Segoe UI,Arial,sans-serif" }}>Загружаем редактор…</div>;
-  }
+  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#EFEFEF", color: "#6b7280", fontSize: 14, fontFamily: FONTS.system }}>Загружаем редактор…</div>;
 
-  const stepList: { key: Sel; label: string; sub: string }[] = [
-    { key: -1, label: "Обложка", sub: cover.title || "Стартовый экран" },
-    ...steps.map((s, i) => ({ key: i as Sel, label: `Вопрос ${i + 1}`, sub: s.question || "—" })),
-    { key: steps.length, label: "Контакты", sub: contact.title || "Форма заявки" },
-  ];
+  const cardBg = step.bg.type === "image" && step.bg.value ? { backgroundImage: `url(${step.bg.value})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: step.bg.value };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#EFEFEF", color: "#111827", overflow: "hidden", fontFamily: "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#EFEFEF", color: "#111827", overflow: "hidden", fontFamily: FONTS.system }}>
       {/* Topbar */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e9e9e9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "10px 16px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
@@ -162,191 +157,295 @@ export function EditorApp() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>Кабинет
           </Link>
           <input value={name} onChange={(e) => { setName(e.target.value); touch(); }} style={{ fontSize: 14, fontWeight: 600, border: "1px solid transparent", borderRadius: 8, padding: "6px 8px", minWidth: 0, maxWidth: 320, fontFamily: "inherit", background: "transparent" }} onFocus={(e) => (e.currentTarget.style.borderColor = "#e5e7eb")} onBlur={(e) => (e.currentTarget.style.borderColor = "transparent")} />
-          <div style={{ fontSize: 11.5, color: dirty ? "#c2410c" : "#9ca3af", whiteSpace: "nowrap" }}>{dirty ? "Есть несохранённые изменения" : savedAt ? `Сохранено в ${savedAt}` : status === "active" ? "Опубликован" : "Черновик"}</div>
+          <div style={{ fontSize: 11.5, color: dirty ? "#c2410c" : "#9ca3af", whiteSpace: "nowrap" }}>{dirty ? "Не сохранено" : savedAt ? `Сохранено в ${savedAt}` : status === "active" ? "Опубликован" : "Черновик"}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div onClick={preview} style={btnGhost}>Предпросмотр</div>
           <div onClick={() => persist()} style={{ ...btnGhost, opacity: saving ? 0.6 : 1 }}>{saving ? "Сохраняем…" : "Сохранить"}</div>
-          <div onClick={publish} style={{ background: status === "active" ? "#111827" : "#28559c", color: "#fff", borderRadius: 9999, padding: "8px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>{status === "active" ? "Снять с публикации" : "Опубликовать"}</div>
+          <div onClick={publish} style={{ background: status === "active" ? "#111827" : "#28559c", color: "#fff", borderRadius: 9999, padding: "8px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" }}>{status === "active" ? "Снять" : "Опубликовать"}</div>
         </div>
       </div>
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        {/* Left: steps */}
-        <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box" }}>
-          <div style={panelLabel}>Шаги квиза</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {stepList.map((item, listIdx) => {
-              const active = sel === item.key;
-              const isQuestion = typeof item.key === "number" && item.key >= 0 && item.key < steps.length;
-              return (
-                <div
-                  key={listIdx}
-                  onClick={() => setSel(item.key)}
-                  draggable={isQuestion}
-                  onDragStart={() => { if (isQuestion) dragFrom.current = item.key as number; }}
-                  onDragOver={(e) => { if (isQuestion) e.preventDefault(); }}
-                  onDrop={() => { if (isQuestion) dropQuestion(item.key as number); }}
-                  style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "transparent", border: "1px solid " + (active ? "rgba(40,85,156,0.25)" : "transparent") }}
-                >
-                  <span style={{ width: 22, height: 22, borderRadius: 6, background: active ? "#28559c" : "#f3f4f6", color: active ? "#fff" : "#6b7280", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {item.key === -1 ? "◎" : item.key === steps.length ? "✎" : (item.key as number) + 1}
-                  </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: active ? "#28559c" : "#374151" }}>{item.label}</span>
-                    <span style={{ display: "block", fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.sub}</span>
-                  </span>
-                  {isQuestion && <span style={{ color: "#c4c8cf", fontSize: 13, cursor: "grab" }}>⠿</span>}
+        {/* Left: steps + palette */}
+        <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 18 }}>
+          <div>
+            <div style={panelLabel}>Шаги</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {doc.steps.map((s, i) => {
+                const active = selStep === i;
+                return (
+                  <div key={s.id} onClick={() => { setSelStep(i); setSelBlock(null); }} draggable onDragStart={() => (dragStep.current = i)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropStep(i)}
+                    style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "transparent", border: "1px solid " + (active ? "rgba(40,85,156,0.25)" : "transparent") }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: active ? "#28559c" : "#f3f4f6", color: active ? "#fff" : "#6b7280", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{s.kind === "cover" ? "◎" : s.kind === "contact" ? "✎" : i}</span>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: active ? "#28559c" : "#374151" }}>{s.kind === "cover" ? "Обложка" : s.kind === "contact" ? "Контакты" : `Шаг ${i}`}</span>
+                      <span style={{ display: "block", fontSize: 11, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.blocks.find((b) => b.type === "heading")?.text || s.title}</span>
+                    </span>
+                    <span style={{ color: "#c4c8cf", fontSize: 12, cursor: "grab" }}>⠿</span>
+                  </div>
+                );
+              })}
+              <div onClick={addStep} style={{ ...addRow, marginTop: 4, color: "#28559c", borderColor: "rgba(40,85,156,0.4)" }}>+ Добавить шаг</div>
+            </div>
+          </div>
+          <div>
+            <div style={panelLabel}>Добавить блок</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {PALETTE.map(([type, icon, label]) => (
+                <div key={type} onClick={() => addBlock(type)} style={{ border: "1px solid #ececec", borderRadius: 12, padding: "10px 6px", fontSize: 11.5, fontWeight: 500, textAlign: "center", cursor: "pointer", color: "#374151", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#28559c", fontFamily: "monospace" }}>{icon}</span>{label}
                 </div>
-              );
-            })}
-            <div onClick={addQuestion} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "9px 10px", borderRadius: 12, fontSize: 12.5, fontWeight: 500, cursor: "pointer", color: "#28559c", border: "1px dashed rgba(40,85,156,0.4)", marginTop: 4 }}>+ Добавить вопрос</div>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Center: canvas */}
         <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "36px 24px" }}>
-          <div style={{ background: bg, borderRadius: 20, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: 460, maxWidth: "100%", padding: 32, boxSizing: "border-box" }}>
-            <ProgressPreview accent={accent} sel={sel} total={steps.length + 1} />
-
-            {sel === -1 && (
-              <div style={{ marginTop: 18 }}>
-                <CanvasInput value={cover.title} onChange={(v) => { setCover((c) => ({ ...c, title: v })); touch(); }} placeholder="Заголовок обложки" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: darkOn(bg) }} />
-                <CanvasInput value={cover.subtitle} onChange={(v) => { setCover((c) => ({ ...c, subtitle: v })); touch(); }} placeholder="Подзаголовок" style={{ fontSize: 15, color: mutedOn(bg), marginTop: 4 }} />
-                <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
-                  {cover.benefits.map((b, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 20, height: 20, borderRadius: 999, background: accent, color: "#fff", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</span>
-                      <CanvasInput value={b} onChange={(v) => setBenefit(i, v)} placeholder="Преимущество" style={{ fontSize: 14, color: darkOn(bg) }} />
-                      <RemoveBtn onClick={() => removeBenefit(i)} />
-                    </div>
-                  ))}
-                  <div onClick={addBenefit} style={addRow}>+ Преимущество</div>
-                </div>
-                <div style={{ marginTop: 20, background: accent, color: "#fff", borderRadius: 12, padding: "14px 16px", fontSize: 15, fontWeight: 600, textAlign: "center" }}>Пройти квиз</div>
-              </div>
-            )}
-
-            {typeof sel === "number" && sel >= 0 && sel < steps.length && (
-              <div style={{ marginTop: 18 }}>
-                <div style={{ fontSize: 12, color: mutedOn(bg), marginBottom: 6 }}>Вопрос {sel + 1} из {steps.length}</div>
-                <CanvasInput value={steps[sel].question} onChange={(v) => setStep(sel, { question: v })} placeholder="Текст вопроса" style={{ fontSize: 18, fontWeight: 600, color: darkOn(bg) }} />
-                <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
-                  {steps[sel].options.map((o, oi) => (
-                    <div key={oi} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #e5e7eb", borderRadius: 12, padding: "4px 10px", background: "#fff" }}>
-                      <span style={{ color: "#c4c8cf", fontSize: 12 }}>○</span>
-                      <CanvasInput value={o} onChange={(v) => setOption(sel, oi, v)} placeholder={`Вариант ${oi + 1}`} style={{ fontSize: 14, color: "#111827" }} />
-                      <RemoveBtn onClick={() => removeOption(sel, oi)} />
-                    </div>
-                  ))}
-                  <div onClick={() => addOption(sel)} style={addRow}>+ Вариант ответа</div>
-                </div>
-              </div>
-            )}
-
-            {sel === steps.length && (
-              <div style={{ marginTop: 18 }}>
-                <CanvasInput value={contact.title} onChange={(v) => { setContact((c) => ({ ...c, title: v })); touch(); }} placeholder="Заголовок формы" style={{ fontSize: 18, fontWeight: 600, color: darkOn(bg) }} />
-                <div style={{ marginTop: 8, display: "inline-block", padding: "6px 12px", borderRadius: 999, background: `${accent}22`, color: accent, fontSize: 13, fontWeight: 600 }}>
-                  🎁 <input value={contact.bonus} onChange={(e) => { setContact((c) => ({ ...c, bonus: e.target.value })); touch(); }} placeholder="Бонус" style={{ border: "none", background: "transparent", color: accent, fontWeight: 600, fontSize: 13, fontFamily: "inherit", outline: "none", width: 140 }} />
-                </div>
-                {["Ваше имя", "Телефон", "E-mail (необязательно)"].map((ph) => (
-                  <div key={ph} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", fontSize: 14, color: "#9ca3af", marginTop: 10, background: "#fff" }}>{ph}</div>
-                ))}
-                <div style={{ marginTop: 14, background: accent, color: "#fff", borderRadius: 12, padding: "14px 16px", fontSize: 15, fontWeight: 600, textAlign: "center" }}>Получить результат</div>
-              </div>
-            )}
+          <div onClick={() => setSelBlock(null)} style={{ ...cardBg, borderRadius: 20, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: 460, maxWidth: "100%", padding: 30, boxSizing: "border-box", minHeight: 300, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
+            {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
+            {step.blocks.map((b) => (
+              <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id}
+                onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
+                onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
+                onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
+                onDragStart={() => (dragBlock.current = b.id)} onDrop={() => dropBlock(b.id)} />
+            ))}
           </div>
         </div>
 
         {/* Right: inspector */}
-        <div style={{ width: 264, flexShrink: 0, background: "#fff", borderLeft: "1px solid #e9e9e9", overflowY: "auto", padding: "18px 16px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 20 }}>
-          <div>
-            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>
-              {sel === -1 ? "Обложка" : sel === steps.length ? "Форма контактов" : `Вопрос ${(sel as number) + 1}`}
-            </div>
-            <div style={{ fontSize: 11.5, color: "#9ca3af" }}>Редактируйте текст прямо на холсте</div>
-          </div>
-
-          {typeof sel === "number" && sel >= 0 && sel < steps.length && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid #f3f4f6", paddingTop: 16 }}>
-              <div style={panelLabel}>Порядок вопроса</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <div onClick={() => moveQuestion(sel, -1)} style={{ ...miniBtn, opacity: sel === 0 ? 0.4 : 1 }}>↑ Выше</div>
-                <div onClick={() => moveQuestion(sel, 1)} style={{ ...miniBtn, opacity: sel === steps.length - 1 ? 0.4 : 1 }}>↓ Ниже</div>
-              </div>
-              <div onClick={() => removeQuestion(sel)} style={{ ...miniBtn, color: "#991b1b", borderColor: "rgba(153,27,27,0.3)", justifyContent: "center" }}>Удалить вопрос</div>
-            </div>
+        <div style={{ width: 288, flexShrink: 0, background: "#fff", borderLeft: "1px solid #e9e9e9", overflowY: "auto", padding: "18px 16px", boxSizing: "border-box" }}>
+          {block ? (
+            <BlockInspector block={block} setStyle={setStyle} setField={setBlockField}
+              onDelete={() => deleteBlock(block.id)} onDup={() => duplicateBlock(block.id)}
+              onUp={() => moveBlock(block.id, -1)} onDown={() => moveBlock(block.id, 1)} />
+          ) : (
+            <StepInspector step={step} theme={doc.theme} setStepField={setStepField} setStepBg={setStepBg} setTheme={setTheme}
+              onDeleteStep={() => deleteStep(selStep)} canDelete={doc.steps.length > 1 && step.kind === "question"} />
           )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, borderTop: "1px solid #f3f4f6", paddingTop: 16 }}>
-            <div style={panelLabel}>Акцентный цвет</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {ACCENTS.map((c) => (
-                <span key={c} onClick={() => { setAccent(c); touch(); }} style={{ width: 26, height: 26, borderRadius: 999, cursor: "pointer", background: c, boxSizing: "border-box", outline: accent === c ? "2px solid #28559c" : "1px solid #e5e7eb", outlineOffset: 2 }} />
-              ))}
-            </div>
-            <div style={panelLabel}>Фон квиза</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {BGS.map((c) => (
-                <span key={c} onClick={() => { setBg(c); touch(); }} style={{ width: 26, height: 26, borderRadius: 8, cursor: "pointer", background: c, boxSizing: "border-box", outline: bg === c ? "2px solid #28559c" : "1px solid #e5e7eb", outlineOffset: 2 }} />
-              ))}
-            </div>
-          </div>
-
-          <div style={{ fontSize: 11.5, color: "#9ca3af", lineHeight: 1.5, borderTop: "1px solid #f3f4f6", paddingTop: 16 }}>
-            Цвет и фон применяются к публичному квизу `/q/{slug || "…"}`. Не забудьте «Сохранить», а затем «Опубликовать».
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── helpers ────────────────────────────────────────────── */
+/* ── canvas block ───────────────────────────────────────── */
+function CanvasBlock({ block, accent, selected, onSelect, onText, onOption, onDragStart, onDrop }: {
+  block: Block; accent: string; selected: boolean;
+  onSelect: (e: React.MouseEvent) => void; onText: (v: string) => void; onOption: (i: number, v: string) => void;
+  onDragStart: () => void; onDrop: () => void;
+}) {
+  const s = block.style;
+  const outer: CSSProperties = { marginTop: s.marginTop, display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center", outline: selected ? "2px solid #28559c" : "2px solid transparent", outlineOffset: 3, borderRadius: 6, cursor: "pointer" };
+  const w = `${s.width}%`;
+  const css = blockCss(s) as CSSProperties;
+  const common = { onClick: onSelect, draggable: true, onDragStart, onDragOver: (e: React.DragEvent) => e.preventDefault(), onDrop };
 
-function CanvasInput({ value, onChange, placeholder, style }: { value: string; onChange: (v: string) => void; placeholder?: string; style?: CSSProperties }) {
+  if (block.type === "heading" || block.type === "text") {
+    return (
+      <div {...common} style={outer}>
+        {selected
+          ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: s.align, border: "1px dashed #28559c", background: "rgba(40,85,156,0.05)", outline: "none" }} />
+          : <div style={{ ...css, width: w, textAlign: s.align, whiteSpace: "pre-wrap" }}>{block.text || "Пустой текст"}</div>}
+      </div>
+    );
+  }
+  if (block.type === "image") {
+    return <div {...common} style={outer}>{block.src ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: s.height || "auto", objectFit: "cover", borderRadius: s.radius }} /> : <div style={{ width: w, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка · задайте URL</div>}</div>;
+  }
+  if (block.type === "html") {
+    return <div {...common} style={outer}><div style={{ width: w, border: "1px dashed #d1d5db", borderRadius: 8, padding: 10, fontSize: 12, fontFamily: "monospace", color: "#6b7280", overflow: "hidden" }}>{"</>"} HTML/JS блок</div></div>;
+  }
+  if (block.type === "button") {
+    return <div {...common} style={outer}>{selected ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: "center", border: "1px dashed #fff", outline: "none" }} /> : <div style={{ ...css, width: w, textAlign: "center" }}>{block.text}</div>}</div>;
+  }
+  if (block.type === "input") {
+    return <div {...common} style={outer}><div style={{ ...css, width: w, color: "#9ca3af" }}>{block.placeholder || "Поле ввода"}</div></div>;
+  }
+  // options
   return (
-    <input
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      onFocus={(e) => (e.currentTarget.style.background = "rgba(40,85,156,0.06)")}
-      onBlur={(e) => (e.currentTarget.style.background = "transparent")}
-      style={{ width: "100%", boxSizing: "border-box", border: "none", borderRadius: 8, padding: "4px 8px", fontFamily: "inherit", background: "transparent", outline: "none", lineHeight: 1.35, ...style }}
-    />
-  );
-}
-
-function RemoveBtn({ onClick }: { onClick: () => void }) {
-  return <span onClick={onClick} title="Удалить" style={{ width: 22, height: 22, borderRadius: 999, background: "#F5F5F5", color: "#9ca3af", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>✕</span>;
-}
-
-function ProgressPreview({ accent, sel, total }: { accent: string; sel: Sel; total: number }) {
-  const idx = sel === -1 ? 0 : (sel as number) + 1;
-  const pct = Math.round((idx / total) * 100);
-  return (
-    <div style={{ height: 5, background: "#eceef2", borderRadius: 999, overflow: "hidden" }}>
-      <div style={{ height: "100%", width: `${pct}%`, background: accent, borderRadius: 999, transition: "width .2s" }} />
+    <div {...common} style={outer}>
+      <div style={{ width: w, display: "flex", flexDirection: "column", gap: 8 }}>
+        {(block.options || []).map((o, i) => (
+          selected
+            ? <input key={i} value={o} onChange={(e) => onOption(i, e.target.value)} onClick={(e) => e.stopPropagation()} style={{ border: `1px solid ${s.borderColor}`, borderRadius: s.radius || 12, padding: "11px 14px", fontSize: s.fontSize, color: s.color, outline: "none" }} />
+            : <div key={i} style={{ textAlign: "left", border: `1px solid ${s.borderColor || "#e5e7eb"}`, borderRadius: s.radius || 12, padding: "12px 15px", fontSize: s.fontSize, background: "#fff", color: s.color }}>{o}</div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function darkOn(bg: string): string {
-  return isDark(bg) ? "#ffffff" : "#111827";
+/* ── block inspector ────────────────────────────────────── */
+function BlockInspector({ block, setStyle, setField, onDelete, onDup, onUp, onDown }: {
+  block: Block;
+  setStyle: <K extends keyof BlockStyle>(k: K, v: BlockStyle[K]) => void;
+  setField: <K extends keyof Block>(k: K, v: Block[K]) => void;
+  onDelete: () => void; onDup: () => void; onUp: () => void; onDown: () => void;
+}) {
+  const s = block.style;
+  const typeName: Record<BlockType, string> = { heading: "Заголовок", text: "Текст", options: "Варианты", input: "Поле", button: "Кнопка", image: "Картинка", html: "HTML/JS" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>{typeName[block.type]}</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <IconBtn title="Выше" onClick={onUp}>↑</IconBtn>
+          <IconBtn title="Ниже" onClick={onDown}>↓</IconBtn>
+          <IconBtn title="Дублировать" onClick={onDup}>⧉</IconBtn>
+          <IconBtn title="Удалить" onClick={onDelete} danger>✕</IconBtn>
+        </div>
+      </div>
+
+      {/* Контент */}
+      <Section title="Контент">
+        {(block.type === "heading" || block.type === "text" || block.type === "button") && (
+          <Field label="Текст"><textarea value={block.text || ""} onChange={(e) => setField("text", e.target.value)} rows={2} style={ta} /></Field>
+        )}
+        {block.type === "options" && (
+          <OptionsEditor options={block.options || []} onChange={(o) => setField("options", o)} />
+        )}
+        {block.type === "input" && (
+          <>
+            <Field label="Тип поля"><Select value={block.field || "text"} onChange={(v) => setField("field", v as Block["field"])} options={[["name", "Имя"], ["phone", "Телефон"], ["email", "E-mail"], ["text", "Произвольное"]]} /></Field>
+            <Field label="Подсказка"><input value={block.placeholder || ""} onChange={(e) => setField("placeholder", e.target.value)} style={inp} /></Field>
+          </>
+        )}
+        {block.type === "image" && (
+          <Field label="URL картинки"><input value={block.src || ""} onChange={(e) => setField("src", e.target.value)} placeholder="https://…" style={inp} /></Field>
+        )}
+        {block.type === "html" && (
+          <Field label="HTML / встраивание"><textarea value={block.html || ""} onChange={(e) => setField("html", e.target.value)} rows={5} style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} /></Field>
+        )}
+        {(block.type === "button" || block.type === "options" || block.type === "image" || block.type === "html") && (
+          <Field label="Цель Метрики/коллтрекинга при клике"><input value={block.goal || ""} onChange={(e) => setField("goal", e.target.value)} placeholder="например quiz_click" style={{ ...inp, fontFamily: "monospace" }} /></Field>
+        )}
+      </Section>
+
+      {/* Размер и стиль */}
+      <Section title="Размер и стиль">
+        <Slider label="Ширина" v={s.width} min={10} max={100} unit="%" onChange={(v) => setStyle("width", v)} />
+        <Field label="Выравнивание"><Segmented value={s.align} onChange={(v) => setStyle("align", v as BlockStyle["align"])} options={[["left", "◧"], ["center", "▣"], ["right", "◨"]]} /></Field>
+        {block.type !== "image" && block.type !== "html" && <Slider label="Шрифт" v={s.fontSize} min={10} max={48} unit="px" onChange={(v) => setStyle("fontSize", v)} />}
+        {(block.type === "heading" || block.type === "text" || block.type === "button" || block.type === "options" || block.type === "input") && (
+          <Field label="Насыщенность"><Select value={String(s.fontWeight)} onChange={(v) => setStyle("fontWeight", Number(v))} options={[["400", "Обычный"], ["500", "Средний"], ["600", "Полужирный"], ["700", "Жирный"]]} /></Field>
+        )}
+        {(block.type === "image" || block.type === "button") && <Slider label="Высота" v={s.height} min={0} max={400} unit="px" onChange={(v) => setStyle("height", v)} />}
+        {block.type !== "image" && block.type !== "html" && <ColorRow label="Цвет текста" value={s.color} onChange={(v) => setStyle("color", v)} />}
+        <ColorRow label="Фон блока" value={s.bg === "transparent" ? "#ffffff" : s.bg} onChange={(v) => setStyle("bg", v)} extra={<span onClick={() => setStyle("bg", "transparent")} style={{ fontSize: 11, color: s.bg === "transparent" ? "#28559c" : "#9ca3af", cursor: "pointer" }}>прозрачный</span>} />
+        <Slider label="Толщина рамки" v={s.borderWidth} min={0} max={8} unit="px" onChange={(v) => setStyle("borderWidth", v)} />
+        <ColorRow label="Цвет рамки" value={s.borderColor} onChange={(v) => setStyle("borderColor", v)} />
+        <Slider label="Скругление" v={s.radius} min={0} max={40} unit="px" onChange={(v) => setStyle("radius", v)} />
+        <Slider label="Отступ ↕" v={s.padY} min={0} max={48} unit="px" onChange={(v) => setStyle("padY", v)} />
+        <Slider label="Отступ ↔" v={s.padX} min={0} max={48} unit="px" onChange={(v) => setStyle("padX", v)} />
+        <Slider label="Сверху" v={s.marginTop} min={0} max={60} unit="px" onChange={(v) => setStyle("marginTop", v)} />
+        <Field label="Шрифт"><Select value={s.font} onChange={(v) => setStyle("font", v)} options={FONT_LABELS} /></Field>
+      </Section>
+    </div>
+  );
 }
-function mutedOn(bg: string): string {
-  return isDark(bg) ? "rgba(255,255,255,0.7)" : "#6b7280";
+
+function OptionsEditor({ options, onChange }: { options: string[]; onChange: (o: string[]) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {options.map((o, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input value={o} onChange={(e) => onChange(options.map((x, j) => (j === i ? e.target.value : x)))} style={{ ...inp, flex: 1 }} />
+          <IconBtn title="Удалить" danger onClick={() => options.length > 1 && onChange(options.filter((_, j) => j !== i))}>✕</IconBtn>
+        </div>
+      ))}
+      <div onClick={() => onChange([...options, `Вариант ${options.length + 1}`])} style={addRow}>+ Вариант</div>
+    </div>
+  );
 }
-function isDark(hex: string): boolean {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return false;
-  const n = parseInt(m[1], 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  return 0.299 * r + 0.587 * g + 0.114 * b < 140;
+
+/* ── step inspector ─────────────────────────────────────── */
+function StepInspector({ step, theme, setStepField, setStepBg, setTheme, onDeleteStep, canDelete }: {
+  step: Step; theme: QuizDoc["theme"];
+  setStepField: <K extends keyof Step>(k: K, v: Step[K]) => void;
+  setStepBg: (p: Partial<Step["bg"]>) => void;
+  setTheme: (p: Partial<QuizDoc["theme"]>) => void;
+  onDeleteStep: () => void; canDelete: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>{step.kind === "cover" ? "Обложка" : step.kind === "contact" ? "Форма контактов" : "Шаг-вопрос"}</div>
+        <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 2 }}>Кликните блок на холсте, чтобы настроить его</div>
+      </div>
+
+      <Section title="Фон шага">
+        <Field label="Тип"><Segmented value={step.bg.type} onChange={(v) => setStepBg({ type: v as "color" | "image" })} options={[["color", "Цвет"], ["image", "Картинка"]]} /></Field>
+        {step.bg.type === "color"
+          ? <ColorRow label="Цвет фона" value={step.bg.value} onChange={(v) => setStepBg({ value: v })} />
+          : <Field label="URL картинки"><input value={step.bg.value} onChange={(e) => setStepBg({ value: e.target.value })} placeholder="https://…" style={inp} /></Field>}
+      </Section>
+
+      <Section title="Аналитика шага">
+        <Field label="Цель при показе (Метрика/коллтрекинг)"><input value={step.goal || ""} onChange={(e) => setStepField("goal", e.target.value)} placeholder="например quiz_step_view" style={{ ...inp, fontFamily: "monospace" }} /></Field>
+      </Section>
+
+      <Section title="Свой JS-код на шаге">
+        <textarea value={step.js || ""} onChange={(e) => setStepField("js", e.target.value)} rows={4} placeholder="// выполнится при показе шага" style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} />
+        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>Доступны переменные <code>step</code> (индекс) и <code>quiz</code>.</div>
+      </Section>
+
+      <Section title="Тема квиза">
+        <ColorRow label="Акцентный цвет" value={theme.accent} onChange={(v) => setTheme({ accent: v })} />
+        <Field label="Шрифт по умолчанию"><Select value={theme.font} onChange={(v) => setTheme({ font: v })} options={FONT_LABELS} /></Field>
+      </Section>
+
+      {canDelete && <div onClick={onDeleteStep} style={{ textAlign: "center", border: "1px solid rgba(153,27,27,0.3)", color: "#991b1b", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>Удалить шаг</div>}
+    </div>
+  );
+}
+
+/* ── reusable controls ──────────────────────────────────── */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 14, display: "flex", flexDirection: "column", gap: 12 }}><div style={panelLabel}>{title}</div>{children}</div>;
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 5 }}>{label}</div>{children}</div>;
+}
+function Slider({ label, v, min, max, unit, onChange }: { label: string; v: number; min: number; max: number; unit: string; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#6b7280", marginBottom: 4 }}><span>{label}</span><b style={{ color: "#111827" }}>{v}{unit}</b></div>
+      <input type="range" min={min} max={max} value={v} onChange={(e) => onChange(+e.target.value)} style={{ width: "100%", accentColor: "#28559c" }} />
+    </div>
+  );
+}
+function ColorRow({ label, value, onChange, extra }: { label: string; value: string; onChange: (v: string) => void; extra?: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: "#6b7280", marginBottom: 5 }}><span>{label}</span>{extra}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#ffffff"} onChange={(e) => onChange(e.target.value)} style={{ width: 34, height: 30, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", padding: 2, cursor: "pointer" }} />
+        <input value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, flex: 1, fontFamily: "monospace", fontSize: 12 }} />
+      </div>
+    </div>
+  );
+}
+function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
+  return (
+    <div style={{ display: "flex", background: "#F5F5F5", borderRadius: 9999, padding: 3 }}>
+      {options.map(([val, label]) => (
+        <div key={val} onClick={() => onChange(val)} style={{ flex: 1, textAlign: "center", borderRadius: 9999, padding: "6px 0", fontSize: 12, fontWeight: 500, cursor: "pointer", background: value === val ? "#fff" : "transparent", color: value === val ? "#111827" : "#6b7280", boxShadow: value === val ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>{label}</div>
+      ))}
+    </div>
+  );
+}
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
+  return <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, cursor: "pointer" }}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
+}
+function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
+  return <span title={title} onClick={onClick} style={{ width: 26, height: 26, borderRadius: 8, background: "#F5F5F5", color: danger ? "#991b1b" : "#6b7280", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>{children}</span>;
 }
 
 const btnGhost: CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" };
-const panelLabel: CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 };
+const panelLabel: CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" };
 const addRow: CSSProperties = { border: "1px dashed #d1d5db", borderRadius: 12, padding: "9px 12px", fontSize: 12.5, fontWeight: 500, textAlign: "center", color: "#6b7280", cursor: "pointer" };
-const miniBtn: CSSProperties = { flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 };
+const inp: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "8px 11px", fontSize: 13, fontFamily: "inherit", color: "#111827", outlineColor: "#28559c" };
+const ta: CSSProperties = { ...inp, resize: "vertical", lineHeight: 1.4 };

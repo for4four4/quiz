@@ -2,11 +2,20 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ensureSchema, query } from "@/lib/server/db";
 import QuizRuntime, { type PublicQuiz } from "@/components/quiz/QuizRuntime";
+import { migrateToDoc, type QuizDoc } from "@/lib/quiz/doc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Row = { slug: string; name: string; steps: unknown; design: unknown; metrika: string | null };
+
+type DesignShape = {
+  doc?: QuizDoc;
+  accent?: string;
+  bg?: string;
+  cover?: { title?: string; subtitle?: string; benefits?: string[] };
+  contactForm?: { title?: string; bonus?: string };
+};
 
 async function loadQuiz(slug: string): Promise<PublicQuiz | null> {
   try {
@@ -20,11 +29,15 @@ async function loadQuiz(slug: string): Promise<PublicQuiz | null> {
       [slug]
     );
     if (!row) return null;
+    const design = (row.design && typeof row.design === "object" ? row.design : {}) as DesignShape;
+    const simpleSteps = Array.isArray(row.steps) ? (row.steps as { question?: string; options?: string[] }[]) : [];
+    const doc: QuizDoc = design.doc && Array.isArray(design.doc.steps) && design.doc.steps.length
+      ? design.doc
+      : migrateToDoc(simpleSteps, design);
     return {
       slug: row.slug,
       name: row.name,
-      steps: Array.isArray(row.steps) ? (row.steps as PublicQuiz["steps"]) : [],
-      design: (row.design && typeof row.design === "object" ? row.design : {}) as PublicQuiz["design"],
+      doc,
       metrikaCounter: row.metrika || undefined,
     };
   } catch {
