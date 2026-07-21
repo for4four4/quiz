@@ -40,6 +40,7 @@ export function EditorApp() {
   const [editMode, setEditMode] = useState<"content" | "button">("content");
   const [gridSize, setGridSize] = useState(10);
   const [snap, setSnap] = useState(true);
+  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
   const [hoverStep, setHoverStep] = useState<string | null>(null);
   const [armedDel, setArmedDel] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -100,6 +101,32 @@ export function EditorApp() {
   }, [onDragMove, onDragEnd]);
   useEffect(() => () => { window.removeEventListener("pointermove", onDragMove); window.removeEventListener("pointerup", onDragEnd); }, [onDragMove, onDragEnd]);
 
+  // Горячие клавиши: стрелки — сдвиг, Delete — удалить блок, Esc — снять выделение, Ctrl/Cmd+D — дублировать
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (editMode !== "content" || !selBlock) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const st = doc.steps[selStep];
+      if (e.key === "Escape") { setSelBlock(null); return; }
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteBlock(selBlock); return; }
+      if ((e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") && (e.metaKey || e.ctrlKey)) { e.preventDefault(); duplicateBlock(selBlock); return; }
+      if (st?.layout === "free" && e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        const b = st.blocks.find((x) => x.id === selBlock); const p = b?.pos || { x: 0, y: 0, w: 220 };
+        const d = e.shiftKey ? 10 : (snap && gridSize > 0 ? gridSize : 1);
+        let x = p.x, y = p.y;
+        if (e.key === "ArrowLeft") x = Math.max(0, x - d);
+        else if (e.key === "ArrowRight") x = x + d;
+        else if (e.key === "ArrowUp") y = Math.max(0, y - d);
+        else if (e.key === "ArrowDown") y = y + d;
+        patchBlockPos(selBlock, { x, y }); touch();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selBlock, selStep, editMode, gridSize, snap, doc]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
     if (!id) { setLoading(false); return; }
@@ -159,11 +186,42 @@ export function EditorApp() {
     setDoc((d) => ({ ...d, steps: d.steps.map((s, i) => (i === selStepRef.current ? { ...s, blocks: s.blocks.map((b) => (b.id === id ? { ...b, pos: { x: 0, y: 0, w: 220, ...(b.pos || {}), ...patch } } : b)) } : s)) }));
   const beginMove = (id: string) => (e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation();
-    const b = doc.steps[selStepRef.current]?.blocks.find((x) => x.id === id);
+    const st = doc.steps[selStepRef.current];
+    const b = st?.blocks.find((x) => x.id === id);
     const p0 = b?.pos || { x: 0, y: 0, w: 220 };
     const sx = e.clientX, sy = e.clientY;
-    const move = (ev: PointerEvent) => patchBlockPos(id, { x: Math.max(0, snapVal(p0.x + ev.clientX - sx)), y: Math.max(0, snapVal(p0.y + ev.clientY - sy)) });
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
+    const card = withCard(doc);
+    const contentW = card.width - card.padX * 2;
+    const contentH = Math.max(240, card.minHeight || 480) - card.padY * 2;
+    // измеряем высоту блока для выравнивания по вертикали
+    const stage = (e.currentTarget as HTMLElement).closest("[data-free-stage]") as HTMLElement | null;
+    const el = stage?.querySelector(`[data-id="${id}"]`) as HTMLElement | null;
+    const bh = p0.h || el?.offsetHeight || 40;
+    const others = (st?.blocks || []).filter((x) => x.id !== id && x.pos).map((x) => x.pos as BlockPos);
+    const T = 6;
+
+    const move = (ev: PointerEvent) => {
+      let nx = Math.max(0, snapVal(p0.x + ev.clientX - sx));
+      let ny = Math.max(0, snapVal(p0.y + ev.clientY - sy));
+      const vLines: number[] = [], hLines: number[] = [];
+      // Кандидаты для выравнивания по X: центр окна + левые/центр/правые края других блоков
+      const xCands = [contentW / 2, ...others.flatMap((o) => [o.x, o.x + o.w / 2, o.x + o.w])];
+      for (const c of xCands) {
+        if (Math.abs(nx - c) <= T) { nx = c; vLines.push(c); }
+        else if (Math.abs(nx + p0.w / 2 - c) <= T) { nx = c - p0.w / 2; vLines.push(c); }
+        else if (Math.abs(nx + p0.w - c) <= T) { nx = c - p0.w; vLines.push(c); }
+      }
+      // Кандидаты для выравнивания по Y: центр окна + верх/центр/низ других блоков
+      const yCands = [contentH / 2, ...others.flatMap((o) => [o.y, o.y + (o.h || bh) / 2, o.y + (o.h || bh)])];
+      for (const c of yCands) {
+        if (Math.abs(ny - c) <= T) { ny = c; hLines.push(c); }
+        else if (Math.abs(ny + bh / 2 - c) <= T) { ny = c - bh / 2; hLines.push(c); }
+        else if (Math.abs(ny + bh - c) <= T) { ny = c - bh; hLines.push(c); }
+      }
+      setGuides({ v: Array.from(new Set(vLines)), h: Array.from(new Set(hLines)) });
+      patchBlockPos(id, { x: Math.max(0, Math.round(nx)), y: Math.max(0, Math.round(ny)) });
+    };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; setGuides({ v: [], h: [] }); touch(); };
     document.body.style.userSelect = "none";
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
@@ -322,8 +380,10 @@ export function EditorApp() {
                 style={{ ...cardBg, borderRadius: card.radius, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: card.width, maxWidth: "100%", padding: `${card.padY}px ${card.padX}px`, boxSizing: "border-box", minHeight: free ? stageH : Math.max(240, card.minHeight || 0) || 300, position: "relative", fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
                 {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
                 {free ? (
-                  <div style={{ position: "relative", height: contentH, ...gridBg }}>
-                    <div style={{ position: "absolute", top: -18, left: 0, fontSize: 10, color: "#9ca3af", pointerEvents: "none" }}>Свободное размещение{snap && gridSize > 0 ? ` · сетка ${gridSize}px` : ""}</div>
+                  <div data-free-stage style={{ position: "relative", height: contentH, ...gridBg }}>
+                    <div style={{ position: "absolute", top: -18, left: 0, fontSize: 10, color: "#9ca3af", pointerEvents: "none" }}>Свободное размещение{snap && gridSize > 0 ? ` · сетка ${gridSize}px` : ""} · стрелки двигают, Del удаляет</div>
+                    {guides.v.map((x, k) => <div key={`v${k}`} style={{ position: "absolute", left: x, top: -card.padY, bottom: -card.padY, width: 1, background: "#e0342f", zIndex: 5, pointerEvents: "none" }} />)}
+                    {guides.h.map((y, k) => <div key={`h${k}`} style={{ position: "absolute", top: y, left: -card.padX, right: -card.padX, height: 1, background: "#e0342f", zIndex: 5, pointerEvents: "none" }} />)}
                     {step.blocks.map(renderBlock)}
                   </div>
                 ) : (
