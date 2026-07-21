@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/minify-embed.mjs && next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -13,6 +13,7 @@
     "next": "^15.1.6",
     "openai": "^6.48.0",
     "pg": "^8.22.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -21,9 +22,11 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.7",
     "@types/pg": "^8.20.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "tailwindcss": "^4.0.0",
+    "terser": "^5.49.0",
     "typescript": "^5.7.3"
   }
 }

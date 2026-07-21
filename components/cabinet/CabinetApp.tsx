@@ -682,11 +682,7 @@ function EmptyState({ title, text, action }: { title: string; text: string; acti
 
 function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { quizzes: Quiz[]; leads: Lead[]; onAi: () => void; onPublishToggle: (q: Quiz) => void; onRemove: (q: Quiz) => void }) {
   const active = quizzes.filter((q) => q.status === "active").length;
-  const copyLink = (slug: string) => {
-    if (typeof window === "undefined") return;
-    const url = `${window.location.origin}/q/${slug}`;
-    navigator.clipboard?.writeText(url).then(() => alert("Ссылка скопирована:\n" + url)).catch(() => alert(url));
-  };
+  const [installQuiz, setInstallQuiz] = useState<Quiz | null>(null);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
@@ -735,7 +731,7 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { q
                 </div>
                 {isActive && (
                   <div style={{ display: "flex", gap: 8 }}>
-                    <div onClick={() => copyLink(q.slug)} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>Копировать ссылку</div>
+                    <div onClick={() => setInstallQuiz(q)} style={{ flex: 1, textAlign: "center", background: "rgba(40,85,156,0.08)", color: "#28559c", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Установка на сайт</div>
                     <a href={`/q/${q.slug}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500 }}>Открыть</a>
                   </div>
                 )}
@@ -744,6 +740,74 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { q
           })}
         </div>
       )}
+      {installQuiz && <InstallModal quiz={installQuiz} onClose={() => setInstallQuiz(null)} />}
+    </div>
+  );
+}
+
+/* ── Установка квиза на сайт: скрипт, ссылка, QR ─────────── */
+function InstallModal({ quiz, onClose }: { quiz: Quiz; onClose: () => void }) {
+  const [qr, setQr] = useState("");
+  const [copied, setCopied] = useState("");
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://qvalify.ru";
+  const link = `${origin}/q/${quiz.slug}`;
+  const scriptPopup = `<script src="${origin}/embed.min.js" data-quiz="${quiz.slug}" defer></script>`;
+  const scriptInline = `<div id="quiz-${quiz.slug}"></div>\n<script src="${origin}/embed.min.js" data-quiz="${quiz.slug}" data-selector="#quiz-${quiz.slug}" defer></script>`;
+
+  useEffect(() => {
+    import("qrcode").then((QRCode) => QRCode.toDataURL(link, { width: 240, margin: 1, color: { dark: "#0F1F3C" } })).then(setQr).catch(() => {});
+  }, [link]);
+
+  const copy = (text: string, key: string) => {
+    navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(""), 1600); }).catch(() => {});
+  };
+  const codeBox: CSSProperties = { background: "#0F1F3C", color: "#c9d6ea", borderRadius: 12, padding: "12px 14px", fontSize: 11.5, fontFamily: "ui-monospace,Menlo,monospace", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.55 };
+  const copyBtn = (key: string, text: string) => (
+    <div onClick={() => copy(text, key)} style={{ marginTop: 8, textAlign: "center", background: copied === key ? "#166534" : "#28559c", color: "#fff", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer", transition: "background .2s" }}>{copied === key ? "✓ Скопировано" : "Копировать код"}</div>
+  );
+
+  return (
+    <div onClick={onClose} style={overlay(70)}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...modalBox, width: 620, padding: 26 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontSize: 17, fontWeight: 600 }}>Установка «{quiz.name}» на сайт</div>
+          <div onClick={onClose} style={closeBtnSm}>✕</div>
+        </div>
+        <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 18 }}>Скрипт лёгкий и подхватывает изменения автоматически: сохранили квиз в редакторе — на сайте уже новая версия. Ничего переустанавливать не нужно.</div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 200px", gap: 18 }} className="qv-anal-grid">
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>1 · Плавающая кнопка + попап</div>
+              <div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 6 }}>Вставьте перед закрывающим <code>&lt;/body&gt;</code> — появится кнопка квиза (вид и позиция настраиваются в редакторе).</div>
+              <div style={codeBox}>{scriptPopup}</div>
+              {copyBtn("popup", scriptPopup)}
+            </div>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>2 · Встроенный блок на странице</div>
+              <div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 6 }}>Вставьте туда, где квиз должен появиться прямо в контенте.</div>
+              <div style={codeBox}>{scriptInline}</div>
+              {copyBtn("inline", scriptInline)}
+            </div>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>3 · Прямая ссылка</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0, border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 12, fontFamily: "ui-monospace,Menlo,monospace", color: "#28559c", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{link}</div>
+                <div onClick={() => copy(link, "link")} style={{ flexShrink: 0, border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 16px", fontSize: 12, fontWeight: 500, cursor: "pointer", color: copied === "link" ? "#166534" : "#374151" }}>{copied === "link" ? "✓" : "Копировать"}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>QR-код квиза</div>
+            {qr
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={qr} alt="QR" style={{ width: 180, height: 180, borderRadius: 12, border: "1px solid #f0f0f0" }} />
+              : <div style={{ width: 180, height: 180, borderRadius: 12, background: "#F5F5F5", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 12 }}>Генерируем…</div>}
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 8, lineHeight: 1.5 }}>Для офлайна: визитки, упаковка, вывеска</div>
+            {qr && <a href={qr} download={`qvalify-${quiz.slug}.png`} style={{ display: "inline-block", marginTop: 8, border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 12, fontWeight: 500, color: "#374151" }}>Скачать PNG</a>}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

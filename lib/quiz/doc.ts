@@ -66,6 +66,7 @@ export type QuizButton = {
   sub: string;
   showSub: boolean;
   bg: string;
+  bgImage?: string;     // картинка-фон кнопки (загруженный файл)
   color: string;
   width: number;
   height: number;

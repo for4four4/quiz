@@ -165,7 +165,8 @@
   }
 
   function buttonStyle(b) {
-    var base = "position:fixed;z-index:99998;border:none;cursor:pointer;font-family:-apple-system,Segoe UI,Arial,sans-serif;color:" + b.color + ";background:" + b.bg + ";box-shadow:0 8px 28px rgba(40,85,156,.4);display:flex;align-items:center;justify-content:center;gap:10px;";
+    var bg = b.bgImage ? "url(" + b.bgImage + ") center/cover, " + b.bg : b.bg;
+    var base = "position:fixed;z-index:99998;border:none;cursor:pointer;font-family:-apple-system,Segoe UI,Arial,sans-serif;color:" + b.color + ";background:" + bg + ";box-shadow:0 8px 28px rgba(40,85,156,.4);display:flex;align-items:center;justify-content:center;gap:10px;";
     if (b.fullscreen) return base + "left:0;right:0;bottom:0;height:" + b.height + "px;border-radius:0;";
     var row = Math.floor(b.position / 3), col = b.position % 3;
     var v = row === 0 ? "top:20px;" : row === 1 ? "top:50%;transform:translateY(-50%);" : "bottom:20px;";

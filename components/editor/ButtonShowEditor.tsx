@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties } from "react";
 import { ANIM_KEYFRAME, OPEN_ANIM_LABELS, POPUP_POS_LABELS, SLIDE_ANIM_LABELS, type QuizSettings } from "@/lib/quiz/doc";
-import { Chips, ColorRow, Field, MultiUpload, Section, Segmented, Slider, Toggle } from "./controls";
+import { Chips, ColorRow, Field, MultiUpload, Section, Segmented, Slider, Toggle, UploadField } from "./controls";
 
 const POPUP_BGS: [string, string][] = [
   ["transparent", "Нет"],
@@ -26,7 +26,7 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
   const btnColor = b.bg === "#ffffff" ? "#28559c" : b.color;
 
   const buttonEl = (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, boxSizing: "border-box", padding: "0 20px", boxShadow: "0 8px 28px rgba(40,85,156,0.35)", width: b.fullscreen ? "100%" : b.width, height: b.height, borderRadius: b.fullscreen ? 0 : b.radius, background: b.bg, color: btnColor, justifyContent: "center" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, boxSizing: "border-box", padding: "0 20px", boxShadow: "0 8px 28px rgba(40,85,156,0.35)", width: b.fullscreen ? "100%" : b.width, height: b.height, borderRadius: b.fullscreen ? 0 : b.radius, background: b.bgImage ? `url(${b.bgImage}) center/cover, ${b.bg}` : b.bg, color: btnColor, justifyContent: "center" }}>
       {b.icon && <svg width="17" height="17" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}><rect x="2" y="3" width="16" height="3.2" rx="1.6" fill="currentColor" opacity="0.5" /><rect x="2" y="8.4" width="16" height="3.2" rx="1.6" fill="currentColor" opacity="0.75" /><rect x="2" y="13.8" width="9" height="3.2" rx="1.6" fill="currentColor" /></svg>}
       <span style={{ minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.text}</span>
@@ -53,7 +53,8 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
             </div>
             <input value={b.sub} onChange={(e) => onButton({ sub: e.target.value })} style={inp} />
           </div>
-          <ColorRow label="Фон кнопки" value={b.bg} onChange={(v) => onButton({ bg: v })} />
+          <ColorRow label="Фон кнопки (цвет)" value={b.bg} onChange={(v) => onButton({ bg: v })} />
+          <Field label="Фон кнопки (картинка, поверх цвета)"><UploadField value={b.bgImage} onChange={(v) => onButton({ bgImage: v })} /></Field>
           <ColorRow label="Цвет текста" value={b.color} onChange={(v) => onButton({ color: v })} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontSize: 12, color: "#374151" }}>Иконка</span>

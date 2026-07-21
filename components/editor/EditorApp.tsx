@@ -9,7 +9,7 @@ import {
   type Block, type BlockPos, type BlockStyle, type BlockType, type CardCfg, type QuizDoc, type QuizSettings, type Step,
 } from "@/lib/quiz/doc";
 import { ButtonShowEditor } from "./ButtonShowEditor";
-import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, MultiUpload, panelLabel, Section, Segmented, Select, Slider, ta, Toggle, UploadField } from "./controls";
+import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, MultiUpload, panelLabel, Segmented, Select, Slider, Tabs, ta, Toggle, UploadField } from "./controls";
 
 const PALETTE: [BlockType, string, string][] = [
   ["heading", "T", "Заголовок"],
@@ -38,6 +38,7 @@ export function EditorApp() {
   const [selStep, setSelStep] = useState(0);
   const [selBlock, setSelBlock] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<"content" | "button">("content");
+  const [leftTab, setLeftTab] = useState<"steps" | "blocks">("steps");
   const [gridSize, setGridSize] = useState(10);
   const [snap, setSnap] = useState(true);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -174,9 +175,57 @@ export function EditorApp() {
     const n = [...s.blocks]; [n[i], n[to]] = [n[to], n[i]]; return { ...s, blocks: n };
   });
   const setStepField = <K extends keyof Step>(k: K, v: Step[K]) => patchStep(selStep, (s) => ({ ...s, [k]: v }));
+
+  // Переключение free/flow: при включении free замеряем реальные позиции блоков
+  // в DOM, чтобы они не «прыгали» и корректно сохранялись.
+  const toggleFreeLayout = () => {
+    const st = doc.steps[selStep];
+    if (!st) return;
+    if (st.layout === "free") { setStepField("layout", "flow"); return; }
+    const stage = document.querySelector("[data-dnd=\"blocks\"]") as HTMLElement | null;
+    const positions: Record<string, BlockPos> = {};
+    if (stage) {
+      const stageRect = stage.getBoundingClientRect();
+      const cs = getComputedStyle(stage);
+      const padL = parseFloat(cs.paddingLeft) || 0, padT = parseFloat(cs.paddingTop) || 0;
+      st.blocks.forEach((b) => {
+        const el = stage.querySelector(`[data-id="${b.id}"]`) as HTMLElement | null;
+        if (el) {
+          const r = el.getBoundingClientRect();
+          positions[b.id] = {
+            x: Math.max(0, Math.round(r.left - stageRect.left - padL)),
+            y: Math.max(0, Math.round(r.top - stageRect.top - padT)),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+          };
+        }
+      });
+    }
+    patchStep(selStep, (s) => ({
+      ...s,
+      layout: "free",
+      blocks: s.blocks.map((b, i) => ({ ...b, pos: positions[b.id] || b.pos || { x: 0, y: i * 70, w: 220 } })),
+    }));
+  };
   const setStepBg = (patch: Partial<Step["bg"]>) => patchStep(selStep, (s) => ({ ...s, bg: { ...s.bg, ...patch } }));
   const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
   const setCard = (patch: Partial<CardCfg>) => { setDoc((d) => ({ ...d, card: { ...withCard(d), ...patch } })); touch(); };
+
+  // Визуальный ресайз окна квиза за правый/нижний край холста
+  const beginCardResize = (dir: "w" | "h" | "wh") => (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const c0 = withCard(doc);
+    const sx = e.clientX, sy = e.clientY;
+    const move = (ev: PointerEvent) => {
+      const patch: Partial<CardCfg> = {};
+      if (dir !== "h") patch.width = Math.max(300, Math.min(760, Math.round(c0.width + ev.clientX - sx)));
+      if (dir !== "w") patch.minHeight = Math.max(0, Math.min(720, Math.round((c0.minHeight || 300) + ev.clientY - sy)));
+      setDoc((d) => ({ ...d, card: { ...withCard(d), ...patch } }));
+    };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };
 
   // Привязка к сетке
   const snapVal = (v: number) => (snap && gridSize > 0 ? Math.round(v / gridSize) * gridSize : Math.round(v));
@@ -312,9 +361,9 @@ export function EditorApp() {
       ) : (
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Left: steps + palette */}
-        <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 18 }}>
-          <div>
-            <div style={panelLabel}>Шаги</div>
+        <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 12 }}>
+          <Tabs value={leftTab} onChange={(v) => setLeftTab(v as "steps" | "blocks")} items={[["steps", "Шаги"], ["blocks", "Блоки"]]} />
+          <div style={{ display: leftTab === "steps" ? "block" : "none" }}>
             <div data-dnd="steps" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {doc.steps.map((s, i) => {
                 const active = selStep === i;
@@ -344,11 +393,11 @@ export function EditorApp() {
               <div onClick={addStep} style={{ ...addRow, marginTop: 4, color: "#28559c", borderColor: "rgba(40,85,156,0.4)" }}>+ Добавить шаг</div>
             </div>
           </div>
-          <div>
-            <div style={panelLabel}>Добавить блок</div>
+          <div style={{ display: leftTab === "blocks" ? "block" : "none" }}>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 8, lineHeight: 1.5 }}>Клик — добавить блок на текущий шаг «{step.kind === "cover" ? "Обложка" : step.kind === "contact" ? "Контакты" : `Шаг ${selStep}`}»</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               {PALETTE.map(([type, icon, label]) => (
-                <div key={type} onClick={() => addBlock(type)} style={{ border: "1px solid #ececec", borderRadius: 12, padding: "10px 6px", fontSize: 11.5, fontWeight: 500, textAlign: "center", cursor: "pointer", color: "#374151", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <div key={type} onClick={() => addBlock(type)} className="qv-tap" style={{ border: "1px solid #ececec", borderRadius: 12, padding: "10px 6px", fontSize: 11.5, fontWeight: 500, textAlign: "center", cursor: "pointer", color: "#374151", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <span style={{ color: "#28559c", fontFamily: "monospace" }}>{icon}</span>{label}
                 </div>
               ))}
@@ -389,6 +438,14 @@ export function EditorApp() {
                 ) : (
                   step.blocks.map(renderBlock)
                 )}
+                {/* Ручки ресайза окна квиза (тянуть за края) */}
+                <div title="Ширина окна" onPointerDown={beginCardResize("w")} style={{ position: "absolute", top: 0, bottom: 0, right: -8, width: 14, cursor: "ew-resize", touchAction: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ width: 4, height: 40, borderRadius: 4, background: "rgba(40,85,156,0.35)" }} />
+                </div>
+                <div title="Высота окна" onPointerDown={beginCardResize("h")} style={{ position: "absolute", left: 0, right: 0, bottom: -8, height: 14, cursor: "ns-resize", touchAction: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ width: 40, height: 4, borderRadius: 4, background: "rgba(40,85,156,0.35)" }} />
+                </div>
+                <div title="Размер окна" onPointerDown={beginCardResize("wh")} style={{ position: "absolute", right: -9, bottom: -9, width: 18, height: 18, cursor: "nwse-resize", touchAction: "none", borderRadius: 5, background: "#fff", border: "2px solid #28559c", boxSizing: "border-box", zIndex: 6 }} />
               </div>
             );
           })()}
@@ -403,7 +460,7 @@ export function EditorApp() {
               onUp={() => moveBlock(block.id, -1)} onDown={() => moveBlock(block.id, 1)} />
           ) : (
             <StepInspector step={step} theme={doc.theme} card={withCard(doc)} setStepField={setStepField} setStepBg={setStepBg} setTheme={setTheme} setCard={setCard}
-              gridSize={gridSize} setGridSize={setGridSize} snap={snap} setSnap={setSnap}
+              gridSize={gridSize} setGridSize={setGridSize} snap={snap} setSnap={setSnap} onToggleLayout={toggleFreeLayout}
               onDeleteStep={() => deleteStep(selStep)} canDelete={doc.steps.length > 1 && step.kind === "question"} />
           )}
         </div>
@@ -487,67 +544,72 @@ function BlockInspector({ block, setStyle, setField, branchSteps, onDelete, onDu
   onDelete: () => void; onDup: () => void; onUp: () => void; onDown: () => void;
 }) {
   const s = block.style;
+  const [tab, setTab] = useState<"content" | "style">("content");
   const typeName: Record<BlockType, string> = { heading: "Заголовок", text: "Текст", options: "Варианты", input: "Поле", button: "Кнопка", image: "Картинка", slider: "Слайдер", html: "HTML/JS" };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 13.5, fontWeight: 600 }}>{typeName[block.type]}</div>
         <div style={{ display: "flex", gap: 6 }}>
           <IconBtn title="Выше" onClick={onUp}>↑</IconBtn>
           <IconBtn title="Ниже" onClick={onDown}>↓</IconBtn>
-          <IconBtn title="Дублировать" onClick={onDup}>⧉</IconBtn>
-          <IconBtn title="Удалить" onClick={onDelete} danger>✕</IconBtn>
+          <IconBtn title="Дублировать (Ctrl+D)" onClick={onDup}>⧉</IconBtn>
+          <IconBtn title="Удалить (Del)" onClick={onDelete} danger>✕</IconBtn>
         </div>
       </div>
 
-      {/* Контент */}
-      <Section title="Контент">
-        {(block.type === "heading" || block.type === "text" || block.type === "button") && (
-          <Field label="Текст"><textarea value={block.text || ""} onChange={(e) => setField("text", e.target.value)} rows={2} style={ta} /></Field>
-        )}
-        {block.type === "options" && (
-          <OptionsEditor options={block.options || []} targets={block.targets || []} steps={branchSteps}
-            onChange={(o) => setField("options", o)} onTargets={(t) => setField("targets", t)} />
-        )}
-        {block.type === "input" && (
-          <>
-            <Field label="Тип поля"><Select value={block.field || "text"} onChange={(v) => setField("field", v as Block["field"])} options={[["name", "Имя"], ["phone", "Телефон"], ["email", "E-mail"], ["text", "Произвольное"]]} /></Field>
-            <Field label="Подсказка"><input value={block.placeholder || ""} onChange={(e) => setField("placeholder", e.target.value)} style={inp} /></Field>
-          </>
-        )}
-        {block.type === "image" && (
-          <Field label="Картинка (файл)"><UploadField value={block.src} onChange={(v) => setField("src", v)} /></Field>
-        )}
-        {block.type === "slider" && (
-          <Field label="Картинки слайдера (файлы)"><MultiUpload images={block.images || []} onChange={(imgs) => setField("images", imgs)} /></Field>
-        )}
-        {block.type === "html" && (
-          <Field label="HTML / встраивание"><textarea value={block.html || ""} onChange={(e) => setField("html", e.target.value)} rows={5} style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} /></Field>
-        )}
-        {(block.type === "button" || block.type === "options" || block.type === "image" || block.type === "html") && (
-          <Field label="Цель Метрики/коллтрекинга при клике"><input value={block.goal || ""} onChange={(e) => setField("goal", e.target.value)} placeholder="например quiz_click" style={{ ...inp, fontFamily: "monospace" }} /></Field>
-        )}
-      </Section>
+      <Tabs value={tab} onChange={(v) => setTab(v as "content" | "style")} items={[["content", "Контент"], ["style", "Стиль"]]} />
 
-      {/* Размер и стиль */}
-      <Section title="Размер и стиль">
-        <Slider label="Ширина" v={s.width} min={10} max={100} unit="%" onChange={(v) => setStyle("width", v)} />
-        <Field label="Выравнивание"><Segmented value={s.align} onChange={(v) => setStyle("align", v as BlockStyle["align"])} options={[["left", "◧"], ["center", "▣"], ["right", "◨"]]} /></Field>
-        {block.type !== "image" && block.type !== "html" && <Slider label="Шрифт" v={s.fontSize} min={10} max={48} unit="px" onChange={(v) => setStyle("fontSize", v)} />}
-        {(block.type === "heading" || block.type === "text" || block.type === "button" || block.type === "options" || block.type === "input") && (
-          <Field label="Насыщенность"><Select value={String(s.fontWeight)} onChange={(v) => setStyle("fontWeight", Number(v))} options={[["400", "Обычный"], ["500", "Средний"], ["600", "Полужирный"], ["700", "Жирный"]]} /></Field>
-        )}
-        {(block.type === "image" || block.type === "button") && <Slider label="Высота" v={s.height} min={0} max={400} unit="px" onChange={(v) => setStyle("height", v)} />}
-        {block.type !== "image" && block.type !== "html" && <ColorRow label="Цвет текста" value={s.color} onChange={(v) => setStyle("color", v)} />}
-        <ColorRow label="Фон блока" value={s.bg === "transparent" ? "#ffffff" : s.bg} onChange={(v) => setStyle("bg", v)} extra={<span onClick={() => setStyle("bg", "transparent")} style={{ fontSize: 11, color: s.bg === "transparent" ? "#28559c" : "#9ca3af", cursor: "pointer" }}>прозрачный</span>} />
-        <Slider label="Толщина рамки" v={s.borderWidth} min={0} max={8} unit="px" onChange={(v) => setStyle("borderWidth", v)} />
-        <ColorRow label="Цвет рамки" value={s.borderColor} onChange={(v) => setStyle("borderColor", v)} />
-        <Slider label="Скругление" v={s.radius} min={0} max={40} unit="px" onChange={(v) => setStyle("radius", v)} />
-        <Slider label="Отступ ↕" v={s.padY} min={0} max={48} unit="px" onChange={(v) => setStyle("padY", v)} />
-        <Slider label="Отступ ↔" v={s.padX} min={0} max={48} unit="px" onChange={(v) => setStyle("padX", v)} />
-        <Slider label="Сверху" v={s.marginTop} min={0} max={60} unit="px" onChange={(v) => setStyle("marginTop", v)} />
-        <Field label="Шрифт"><Select value={s.font} onChange={(v) => setStyle("font", v)} options={FONT_LABELS} /></Field>
-      </Section>
+      {tab === "content" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {(block.type === "heading" || block.type === "text" || block.type === "button") && (
+            <Field label="Текст"><textarea value={block.text || ""} onChange={(e) => setField("text", e.target.value)} rows={2} style={ta} /></Field>
+          )}
+          {block.type === "options" && (
+            <OptionsEditor options={block.options || []} targets={block.targets || []} steps={branchSteps}
+              onChange={(o) => setField("options", o)} onTargets={(t) => setField("targets", t)} />
+          )}
+          {block.type === "input" && (
+            <>
+              <Field label="Тип поля"><Select value={block.field || "text"} onChange={(v) => setField("field", v as Block["field"])} options={[["name", "Имя"], ["phone", "Телефон"], ["email", "E-mail"], ["text", "Произвольное"]]} /></Field>
+              <Field label="Подсказка"><input value={block.placeholder || ""} onChange={(e) => setField("placeholder", e.target.value)} style={inp} /></Field>
+            </>
+          )}
+          {block.type === "image" && (
+            <Field label="Картинка (файл)"><UploadField value={block.src} onChange={(v) => setField("src", v)} /></Field>
+          )}
+          {block.type === "slider" && (
+            <Field label="Картинки слайдера (файлы)"><MultiUpload images={block.images || []} onChange={(imgs) => setField("images", imgs)} /></Field>
+          )}
+          {block.type === "html" && (
+            <Field label="HTML / встраивание"><textarea value={block.html || ""} onChange={(e) => setField("html", e.target.value)} rows={5} style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} /></Field>
+          )}
+          {(block.type === "button" || block.type === "options" || block.type === "image" || block.type === "html") && (
+            <Field label="Цель Метрики/коллтрекинга при клике"><input value={block.goal || ""} onChange={(e) => setField("goal", e.target.value)} placeholder="например quiz_click" style={{ ...inp, fontFamily: "monospace" }} /></Field>
+          )}
+        </div>
+      )}
+
+      {tab === "style" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Slider label="Ширина" v={s.width} min={10} max={100} unit="%" onChange={(v) => setStyle("width", v)} />
+          <Field label="Выравнивание"><Segmented value={s.align} onChange={(v) => setStyle("align", v as BlockStyle["align"])} options={[["left", "◧"], ["center", "▣"], ["right", "◨"]]} /></Field>
+          {block.type !== "image" && block.type !== "html" && <Slider label="Шрифт" v={s.fontSize} min={10} max={48} unit="px" onChange={(v) => setStyle("fontSize", v)} />}
+          {(block.type === "heading" || block.type === "text" || block.type === "button" || block.type === "options" || block.type === "input") && (
+            <Field label="Насыщенность"><Select value={String(s.fontWeight)} onChange={(v) => setStyle("fontWeight", Number(v))} options={[["400", "Обычный"], ["500", "Средний"], ["600", "Полужирный"], ["700", "Жирный"]]} /></Field>
+          )}
+          {(block.type === "image" || block.type === "button" || block.type === "slider") && <Slider label="Высота" v={s.height} min={0} max={400} unit="px" onChange={(v) => setStyle("height", v)} />}
+          {block.type !== "image" && block.type !== "html" && <ColorRow label="Цвет текста" value={s.color} onChange={(v) => setStyle("color", v)} />}
+          <ColorRow label="Фон блока" value={s.bg === "transparent" ? "#ffffff" : s.bg} onChange={(v) => setStyle("bg", v)} extra={<span onClick={() => setStyle("bg", "transparent")} style={{ fontSize: 11, color: s.bg === "transparent" ? "#28559c" : "#9ca3af", cursor: "pointer" }}>прозрачный</span>} />
+          <Slider label="Толщина рамки" v={s.borderWidth} min={0} max={8} unit="px" onChange={(v) => setStyle("borderWidth", v)} />
+          <ColorRow label="Цвет рамки" value={s.borderColor} onChange={(v) => setStyle("borderColor", v)} />
+          <Slider label="Скругление" v={s.radius} min={0} max={40} unit="px" onChange={(v) => setStyle("radius", v)} />
+          <Slider label="Отступ ↕" v={s.padY} min={0} max={48} unit="px" onChange={(v) => setStyle("padY", v)} />
+          <Slider label="Отступ ↔" v={s.padX} min={0} max={48} unit="px" onChange={(v) => setStyle("padX", v)} />
+          <Slider label="Сверху" v={s.marginTop} min={0} max={60} unit="px" onChange={(v) => setStyle("marginTop", v)} />
+          <Field label="Шрифт"><Select value={s.font} onChange={(v) => setStyle("font", v)} options={FONT_LABELS} /></Field>
+        </div>
+      )}
     </div>
   );
 }
@@ -583,70 +645,77 @@ function OptionsEditor({ options, targets, steps, onChange, onTargets }: {
 }
 
 /* ── step inspector ─────────────────────────────────────── */
-function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, gridSize, setGridSize, snap, setSnap, onDeleteStep, canDelete }: {
+function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, gridSize, setGridSize, snap, setSnap, onToggleLayout, onDeleteStep, canDelete }: {
   step: Step; theme: QuizDoc["theme"]; card: CardCfg;
   setStepField: <K extends keyof Step>(k: K, v: Step[K]) => void;
   setStepBg: (p: Partial<Step["bg"]>) => void;
   setTheme: (p: Partial<QuizDoc["theme"]>) => void;
   setCard: (p: Partial<CardCfg>) => void;
   gridSize: number; setGridSize: (v: number) => void; snap: boolean; setSnap: (v: boolean) => void;
+  onToggleLayout: () => void;
   onDeleteStep: () => void; canDelete: boolean;
 }) {
   const free = step.layout === "free";
+  const [tab, setTab] = useState<"step" | "window" | "extra">("step");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <div style={{ fontSize: 13.5, fontWeight: 600 }}>{step.kind === "cover" ? "Обложка" : step.kind === "contact" ? "Форма контактов" : "Шаг-вопрос"}</div>
         <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 2 }}>Кликните блок на холсте, чтобы настроить его</div>
       </div>
 
-      <Section title="Окно квиза (размер)">
-        <Slider label="Ширина окна" v={card.width} min={300} max={760} unit="px" onChange={(v) => setCard({ width: v })} />
-        <Slider label="Мин. высота" v={card.minHeight} min={0} max={720} unit="px" onChange={(v) => setCard({ minHeight: v })} />
-        <Slider label="Отступ ↔" v={card.padX} min={0} max={64} unit="px" onChange={(v) => setCard({ padX: v })} />
-        <Slider label="Отступ ↕" v={card.padY} min={0} max={64} unit="px" onChange={(v) => setCard({ padY: v })} />
-        <Slider label="Скругление окна" v={card.radius} min={0} max={40} unit="px" onChange={(v) => setCard({ radius: v })} />
-      </Section>
+      <Tabs value={tab} onChange={(v) => setTab(v as "step" | "window" | "extra")} items={[["step", "Шаг"], ["window", "Окно"], ["extra", "Ещё"]]} />
 
-      <Section title="Размещение блоков на шаге">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 12, color: "#374151" }}>Свободное (тянуть блоки мышью)</span>
-          <Toggle on={free} onClick={() => setStepField("layout", free ? "flow" : "free")} />
-        </div>
-        <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>{free ? "Блоки двигаются и меняют размер мышью. Задайте мин. высоту окна выше." : "Блоки идут в столбик сверху вниз."}</div>
-        {free && (
-          <>
+      {tab === "step" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Field label="Фон шага"><Segmented value={step.bg.type} onChange={(v) => setStepBg({ type: v as "color" | "image" })} options={[["color", "Цвет"], ["image", "Картинка"]]} /></Field>
+          {step.bg.type === "color"
+            ? <ColorRow label="Цвет фона" value={step.bg.value} onChange={(v) => setStepBg({ value: v })} />
+            : <Field label="Фон-картинка (файл)"><UploadField value={step.bg.value} onChange={(v) => setStepBg({ value: v })} /></Field>}
+          <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 12, color: "#374151" }}>Привязка к сетке</span>
-              <Toggle on={snap} onClick={() => setSnap(!snap)} />
+              <span style={{ fontSize: 12, color: "#374151" }}>Свободное размещение блоков</span>
+              <Toggle on={free} onClick={onToggleLayout} />
             </div>
-            <Slider label="Шаг сетки" v={gridSize} min={2} max={40} unit="px" onChange={setGridSize} />
-          </>
-        )}
-      </Section>
+            <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>{free ? "Блоки двигаются и меняют размер мышью." : "Блоки идут в столбик сверху вниз."}</div>
+            {free && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 12, color: "#374151" }}>Привязка к сетке</span>
+                  <Toggle on={snap} onClick={() => setSnap(!snap)} />
+                </div>
+                <Slider label="Шаг сетки" v={gridSize} min={2} max={40} unit="px" onChange={setGridSize} />
+              </>
+            )}
+          </div>
+          {canDelete && <div onClick={onDeleteStep} style={{ textAlign: "center", border: "1px solid rgba(153,27,27,0.3)", color: "#991b1b", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>Удалить шаг</div>}
+        </div>
+      )}
 
-      <Section title="Фон шага">
-        <Field label="Тип"><Segmented value={step.bg.type} onChange={(v) => setStepBg({ type: v as "color" | "image" })} options={[["color", "Цвет"], ["image", "Картинка"]]} /></Field>
-        {step.bg.type === "color"
-          ? <ColorRow label="Цвет фона" value={step.bg.value} onChange={(v) => setStepBg({ value: v })} />
-          : <Field label="Фон-картинка (файл)"><UploadField value={step.bg.value} onChange={(v) => setStepBg({ value: v })} /></Field>}
-      </Section>
+      {tab === "window" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>Размер окна общий для всех шагов. Можно также тянуть окно за правый/нижний край прямо на холсте.</div>
+          <Slider label="Ширина окна" v={card.width} min={300} max={760} unit="px" onChange={(v) => setCard({ width: v })} />
+          <Slider label="Мин. высота" v={card.minHeight} min={0} max={720} unit="px" onChange={(v) => setCard({ minHeight: v })} />
+          <Slider label="Отступ ↔" v={card.padX} min={0} max={64} unit="px" onChange={(v) => setCard({ padX: v })} />
+          <Slider label="Отступ ↕" v={card.padY} min={0} max={64} unit="px" onChange={(v) => setCard({ padY: v })} />
+          <Slider label="Скругление окна" v={card.radius} min={0} max={40} unit="px" onChange={(v) => setCard({ radius: v })} />
+          <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+            <ColorRow label="Акцентный цвет квиза" value={theme.accent} onChange={(v) => setTheme({ accent: v })} />
+            <Field label="Шрифт по умолчанию"><Select value={theme.font} onChange={(v) => setTheme({ font: v })} options={FONT_LABELS} /></Field>
+          </div>
+        </div>
+      )}
 
-      <Section title="Аналитика шага">
-        <Field label="Цель при показе (Метрика/коллтрекинг)"><input value={step.goal || ""} onChange={(e) => setStepField("goal", e.target.value)} placeholder="например quiz_step_view" style={{ ...inp, fontFamily: "monospace" }} /></Field>
-      </Section>
-
-      <Section title="Свой JS-код на шаге">
-        <textarea value={step.js || ""} onChange={(e) => setStepField("js", e.target.value)} rows={4} placeholder="// выполнится при показе шага" style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} />
-        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>Доступны переменные <code>step</code> (индекс) и <code>quiz</code>.</div>
-      </Section>
-
-      <Section title="Тема квиза">
-        <ColorRow label="Акцентный цвет" value={theme.accent} onChange={(v) => setTheme({ accent: v })} />
-        <Field label="Шрифт по умолчанию"><Select value={theme.font} onChange={(v) => setTheme({ font: v })} options={FONT_LABELS} /></Field>
-      </Section>
-
-      {canDelete && <div onClick={onDeleteStep} style={{ textAlign: "center", border: "1px solid rgba(153,27,27,0.3)", color: "#991b1b", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>Удалить шаг</div>}
+      {tab === "extra" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Field label="Цель при показе шага (Метрика/коллтрекинг)"><input value={step.goal || ""} onChange={(e) => setStepField("goal", e.target.value)} placeholder="например quiz_step_view" style={{ ...inp, fontFamily: "monospace" }} /></Field>
+          <Field label="Свой JS-код на шаге">
+            <textarea value={step.js || ""} onChange={(e) => setStepField("js", e.target.value)} rows={5} placeholder="// выполнится при показе шага" style={{ ...ta, fontFamily: "monospace", fontSize: 12 }} />
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>Доступны переменные <code>step</code> (индекс) и <code>quiz</code>.</div>
+          </Field>
+        </div>
+      )}
     </div>
   );
 }

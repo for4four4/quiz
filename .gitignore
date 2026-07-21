@@ -26,3 +26,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# generated
+public/embed.min.js
