@@ -80,6 +80,15 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
 
   useEffect(() => { trackEvent("open"); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Переадресация после успешной заявки (если настроена)
+  useEffect(() => {
+    if (!done) return;
+    const url = settings.thanks?.redirectUrl;
+    if (!url || !/^https?:\/\//.test(url)) return;
+    const t = setTimeout(() => { window.location.href = url; }, Math.max(0, settings.thanks?.redirectSec ?? 3) * 1000);
+    return () => clearTimeout(t);
+  }, [done]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // На каждый показ шага: воронка + цель шага + свой JS
   useEffect(() => {
     const step = steps[i];
@@ -166,9 +175,10 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
 
         {done ? (
           <div style={{ textAlign: "center", padding: "28px 0" }}>
-            <div style={{ fontSize: 44 }}>✅</div>
-            <div style={{ fontSize: 18, fontWeight: 600, marginTop: 8, color: "#111827" }}>Заявка отправлена!</div>
-            <p style={{ fontSize: 14, color: "#6b7280", marginTop: 8 }}>Спасибо! Мы свяжемся с вами в ближайшее время.</p>
+            <div style={{ fontSize: 44 }}>{settings.thanks?.emoji || "✅"}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, marginTop: 8, color: "#111827" }}>{settings.thanks?.title || "Заявка отправлена!"}</div>
+            <p style={{ fontSize: 14, color: "#6b7280", marginTop: 8, whiteSpace: "pre-wrap" }}>{settings.thanks?.text || "Спасибо! Мы свяжемся с вами в ближайшее время."}</p>
+            {!!settings.thanks?.redirectUrl && <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>Сейчас перенаправим…</p>}
           </div>
         ) : (
           <div key={i} style={{ animation: slideKf ? `${slideKf} .42s cubic-bezier(.2,.8,.3,1)` : undefined, position: free ? "relative" : undefined, height: free ? contentH : undefined }}>
@@ -182,7 +192,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
           </div>
         )}
       </div>
-      <a href="https://qvalify.ru" target="_blank" rel="noreferrer" style={madeWith}>Сделано на Квалифай</a>
+      {!settings.hideBadge && <a href="https://qvalify.ru" target="_blank" rel="noreferrer" style={madeWith}>Сделано на Квалифай</a>}
     </main>
   );
 }

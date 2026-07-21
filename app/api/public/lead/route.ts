@@ -37,8 +37,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Нужны slug и телефон" }, { status: 400, headers: cors });
     }
 
-    const [quiz] = await query<{ id: number; user_id: number; name: string }>(
-      "SELECT id,user_id,name FROM quizzes WHERE slug=$1 AND status='active'",
+    const [quiz] = await query<{ id: number; user_id: number; name: string; design: { integrations?: Record<string, { enabled?: boolean; config?: Record<string, string> }> } | null }>(
+      "SELECT id,user_id,name,design FROM quizzes WHERE slug=$1 AND status='active'",
       [b.slug]
     );
     if (!quiz) return NextResponse.json({ error: "Квиз не найден" }, { status: 404, headers: cors });
@@ -68,11 +68,21 @@ export async function POST(req: Request) {
       [quiz.id, b.source || "прямая ссылка"]
     ).catch(() => {});
 
-    // Диспатч в интеграции пользователя
-    const integrations = await query<{ kind: string; config: Record<string, string>; enabled: boolean }>(
+    // Диспатч в интеграции пользователя. По умолчанию заявка идёт во все
+    // подключённые каналы; правила конкретного квиза (design.integrations)
+    // могут отключить канал или переопределить ключи для этого квиза.
+    const rules = quiz.design?.integrations || {};
+    const rows = await query<{ kind: string; config: Record<string, string>; enabled: boolean }>(
       "SELECT kind,config,enabled FROM integrations WHERE user_id=$1 AND enabled=true",
       [quiz.user_id]
     );
+    const integrations = rows
+      .filter((i) => rules[i.kind]?.enabled !== false)
+      .map((i) => {
+        const over = rules[i.kind]?.config || {};
+        const filled = Object.fromEntries(Object.entries(over).filter(([, v]) => v && String(v).trim()));
+        return Object.keys(filled).length ? { ...i, config: { ...i.config, ...filled } } : i;
+      });
     if (integrations.length) {
       await dispatchLead(integrations, {
         quizName: quiz.name,

@@ -92,12 +92,30 @@ export type QuizDisplay = {
 export const POPUP_POS_LABELS: [PopupPos, string][] = [
   ["center", "По центру"], ["br", "Справа внизу"], ["bl", "Слева внизу"], ["tr", "Справа вверху"], ["tl", "Слева вверху"],
 ];
+export type QuizThanks = {
+  emoji: string;
+  title: string;
+  text: string;
+  redirectUrl?: string;   // переадресация после прохождения (в т.ч. на маркетплейсы)
+  redirectSec?: number;   // задержка перед переадресацией
+};
+
 export type QuizSettings = {
   slideAnim: SlideAnim;
   openAnim: OpenAnim;
   button: QuizButton;
   display: QuizDisplay;
+  thanks?: QuizThanks;
+  hideBadge?: boolean;    // скрыть «Сделано на Квалифай»
 };
+
+export function defaultThanks(): QuizThanks {
+  return { emoji: "✅", title: "Заявка отправлена!", text: "Спасибо! Мы свяжемся с вами в ближайшее время.", redirectUrl: "", redirectSec: 3 };
+}
+
+/** Правила доставки заявок этого квиза: по умолчанию — во все подключённые
+ *  каналы; можно отключить канал или переопределить ключи для этого квиза. */
+export type QuizIntegrations = Record<string, { enabled?: boolean; config?: Record<string, string> }>;
 
 export type QuizDoc = {
   v: 1;
@@ -105,6 +123,8 @@ export type QuizDoc = {
   steps: Step[];
   settings?: QuizSettings;
   card?: CardCfg;
+  integrations?: QuizIntegrations;
+  ab?: { b: string; split: number; enabled: boolean };  // A/B: slug варианта B и доля трафика на B
 };
 
 export function withCard(doc: QuizDoc): CardCfg {
@@ -128,13 +148,15 @@ export function defaultSettings(accent = "#28559c"): QuizSettings {
     openAnim: "zoom",
     button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: accent, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
     display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", popupImages: [], position: "center", progressOn: true, progressStyle: "line", progressColor: accent },
+    thanks: defaultThanks(),
+    hideBadge: false,
   };
 }
 
 export function withSettings(doc: QuizDoc): QuizSettings {
   const d = defaultSettings(doc.theme.accent);
   if (!doc.settings) return d;
-  return { ...d, ...doc.settings, button: { ...d.button, ...doc.settings.button }, display: { ...d.display, ...doc.settings.display } };
+  return { ...d, ...doc.settings, button: { ...d.button, ...doc.settings.button }, display: { ...d.display, ...doc.settings.display }, thanks: { ...defaultThanks(), ...(doc.settings.thanks || {}) } };
 }
 
 export const FONTS: Record<string, string> = {
@@ -262,6 +284,8 @@ export function docToDesign(doc: QuizDoc) {
   return {
     doc,
     settings: withSettings(doc),
+    integrations: doc.integrations || {},
+    ab: doc.ab,
     accent: doc.theme.accent,
     bg: doc.theme.bg,
     cover: {

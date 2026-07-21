@@ -50,7 +50,8 @@
       slideAnim: s.slideAnim || DEF.slideAnim,
       openAnim: s.openAnim || DEF.openAnim,
       button: merge(DEF.button, s.button),
-      display: merge(DEF.display, s.display)
+      display: merge(DEF.display, s.display),
+      thanks: merge({ emoji: "✅", title: "Заявка отправлена!", text: "Мы свяжемся с вами в ближайшее время", redirectUrl: "", redirectSec: 3 }, s.thanks)
     };
   }
 
@@ -125,8 +126,12 @@
             body: JSON.stringify({ slug: slug, name: name.value, phone: phone.value, answers: answers, source: source, finished: true })
           }).then(function () {
             card.innerHTML = "";
-            card.appendChild(el("div", "text-align:center;font-size:17px;font-weight:600;color:#166534;padding:24px 0;", "Заявка отправлена!"));
-            card.appendChild(el("div", "text-align:center;font-size:13px;color:#6b7280;", "Мы свяжемся с вами в ближайшее время"));
+            card.appendChild(el("div", "text-align:center;font-size:34px;padding-top:16px;", cfg.thanks.emoji));
+            card.appendChild(el("div", "text-align:center;font-size:17px;font-weight:600;color:#111827;padding:8px 0 4px;", cfg.thanks.title));
+            card.appendChild(el("div", "text-align:center;font-size:13px;color:#6b7280;padding-bottom:16px;", cfg.thanks.text));
+            if (cfg.thanks.redirectUrl && /^https?:\/\//.test(cfg.thanks.redirectUrl)) {
+              setTimeout(function () { window.location.href = cfg.thanks.redirectUrl; }, Math.max(0, cfg.thanks.redirectSec || 0) * 1000);
+            }
           }).catch(function () { send.disabled = false; send.textContent = "Получить результат"; });
         };
         wrap.appendChild(name); wrap.appendChild(phone); wrap.appendChild(send);

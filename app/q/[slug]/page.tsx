@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ensureSchema, query } from "@/lib/server/db";
 import QuizRuntime, { type PublicQuiz } from "@/components/quiz/QuizRuntime";
 import { migrateToDoc, type QuizDoc } from "@/lib/quiz/doc";
+import { pickAbVariant } from "@/lib/server/ab";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,13 +21,16 @@ type DesignShape = {
 async function loadQuiz(slug: string): Promise<PublicQuiz | null> {
   try {
     await ensureSchema();
+    // A/B: с вероятностью split% показываем вариант B (события/заявки пишутся на него)
+    const picked = await pickAbVariant(slug);
+    if (!picked) return null;
     const [row] = await query<Row>(
       `SELECT q.slug, q.name, q.steps, q.design,
               (SELECT i.config->>'counter' FROM integrations i
                 WHERE i.user_id = q.user_id AND i.kind='metrika' AND i.enabled=true
                   AND COALESCE(i.config->>'counter','') <> '' LIMIT 1) AS metrika
          FROM quizzes q WHERE q.slug=$1 AND q.status='active'`,
-      [slug]
+      [picked.slug]
     );
     if (!row) return null;
     const design = (row.design && typeof row.design === "object" ? row.design : {}) as DesignShape;

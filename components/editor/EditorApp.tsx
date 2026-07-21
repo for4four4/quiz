@@ -9,6 +9,7 @@ import {
   type Block, type BlockPos, type BlockStyle, type BlockType, type CardCfg, type QuizDoc, type QuizSettings, type Step,
 } from "@/lib/quiz/doc";
 import { ButtonShowEditor } from "./ButtonShowEditor";
+import { LeadsRoutingEditor } from "./LeadsRoutingEditor";
 import { addRow, btnGhost, ColorRow, Field, IconBtn, inp, MultiUpload, panelLabel, Segmented, Select, Slider, Tabs, ta, Toggle, UploadField } from "./controls";
 
 const PALETTE: [BlockType, string, string][] = [
@@ -37,8 +38,9 @@ export function EditorApp() {
   const [doc, setDoc] = useState<QuizDoc>(starterDoc);
   const [selStep, setSelStep] = useState(0);
   const [selBlock, setSelBlock] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState<"content" | "button">("content");
+  const [editMode, setEditMode] = useState<"content" | "button" | "leads">("content");
   const [leftTab, setLeftTab] = useState<"steps" | "blocks">("steps");
+  const [hoverCard, setHoverCard] = useState(false);
   const [gridSize, setGridSize] = useState(10);
   const [snap, setSnap] = useState(true);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -208,6 +210,11 @@ export function EditorApp() {
     }));
   };
   const setStepBg = (patch: Partial<Step["bg"]>) => patchStep(selStep, (s) => ({ ...s, bg: { ...s.bg, ...patch } }));
+  const applyBgToAll = () => {
+    const bg = doc.steps[selStep]?.bg;
+    if (!bg) return;
+    setDoc((d) => ({ ...d, steps: d.steps.map((s) => ({ ...s, bg: { ...bg } })) })); touch();
+  };
   const setTheme = (patch: Partial<QuizDoc["theme"]>) => { setDoc((d) => ({ ...d, theme: { ...d.theme, ...patch } })); touch(); };
   const setCard = (patch: Partial<CardCfg>) => { setDoc((d) => ({ ...d, card: { ...withCard(d), ...patch } })); touch(); };
 
@@ -289,6 +296,11 @@ export function EditorApp() {
   const onButton = (p: Partial<QuizSettings["button"]>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, button: { ...s.button, ...p } } }; }); touch(); };
   const onDisplay = (p: Partial<QuizSettings["display"]>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, display: { ...s.display, ...p } } }; }); touch(); };
   const onAnim = (p: Partial<Pick<QuizSettings, "slideAnim" | "openAnim">>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, ...p } } as QuizDoc; }); touch(); };
+  const onThanks = (p: Partial<NonNullable<QuizSettings["thanks"]>>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, thanks: { ...s.thanks!, ...p } } }; }); touch(); };
+  const onMisc = (p: Partial<Pick<QuizSettings, "hideBadge">>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, ...p } }; }); touch(); };
+  const onIntegrations = (kind: string, patch: { enabled?: boolean; config?: Record<string, string> }) => {
+    setDoc((d) => { const cur = d.integrations || {}; return { ...d, integrations: { ...cur, [kind]: { ...(cur[kind] || {}), ...patch } } }; }); touch();
+  };
 
   const addStep = () => {
     const ns: Step = { id: Math.random().toString(36).slice(2, 9), kind: "question", title: "Новый вопрос", bg: { type: "color", value: doc.theme.bg }, blocks: [newBlock("heading", doc.theme.accent), newBlock("options", doc.theme.accent)] };
@@ -345,7 +357,7 @@ export function EditorApp() {
           <div style={{ fontSize: 11.5, color: dirty ? "#c2410c" : "#9ca3af", whiteSpace: "nowrap" }}>{dirty ? "Не сохранено" : savedAt ? `Сохранено в ${savedAt}` : status === "active" ? "Опубликован" : "Черновик"}</div>
         </div>
         <div style={{ display: "flex", background: "#F5F5F5", borderRadius: 9999, padding: 3, flexShrink: 0 }}>
-          {([["content", "Контент"], ["button", "Кнопка и показ"]] as const).map(([m, label]) => (
+          {([["content", "Контент"], ["button", "Кнопка и показ"], ["leads", "Заявки"]] as const).map(([m, label]) => (
             <div key={m} onClick={() => setEditMode(m)} style={{ borderRadius: 9999, padding: "6px 14px", fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap", background: editMode === m ? "#fff" : "transparent", color: editMode === m ? "#111827" : "#6b7280", boxShadow: editMode === m ? "0 1px 4px rgba(0,0,0,0.08)" : "none" }}>{label}</div>
           ))}
         </div>
@@ -356,8 +368,10 @@ export function EditorApp() {
         </div>
       </div>
 
-      {editMode === "button" ? (
-        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} />
+      {editMode === "leads" ? (
+        <LeadsRoutingEditor rules={doc.integrations || {}} onChange={onIntegrations} />
+      ) : editMode === "button" ? (
+        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} onThanks={onThanks} onMisc={onMisc} />
       ) : (
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Left: steps + palette */}
@@ -424,9 +438,16 @@ export function EditorApp() {
                 onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
                 onGrip={free ? beginMove(b.id) : beginDrag("block", b.id)} onResize={beginResize(b.id)} />
             );
+            const cardActive = !selBlock; // без выбранного блока справа настройки окна/шага
             return (
               <div data-dnd="blocks" onClick={() => setSelBlock(null)}
-                style={{ ...cardBg, borderRadius: card.radius, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: card.width, maxWidth: "100%", padding: `${card.padY}px ${card.padX}px`, boxSizing: "border-box", minHeight: free ? stageH : Math.max(240, card.minHeight || 0) || 300, position: "relative", fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
+                onMouseEnter={() => setHoverCard(true)} onMouseLeave={() => setHoverCard(false)}
+                style={{ ...cardBg, borderRadius: card.radius, boxShadow: "0 12px 40px rgba(17,24,39,0.10)", width: card.width, maxWidth: "100%", padding: `${card.padY}px ${card.padX}px`, boxSizing: "border-box", minHeight: free ? stageH : Math.max(240, card.minHeight || 0) || 300, position: "relative", fontFamily: FONTS[doc.theme.font] || FONTS.system, outline: cardActive ? "2px solid rgba(40,85,156,0.55)" : hoverCard ? "2px dashed rgba(40,85,156,0.45)" : "2px solid transparent", outlineOffset: 4, transition: "outline-color .15s", cursor: "default" }}>
+                {(hoverCard || cardActive) && (
+                  <div style={{ position: "absolute", top: -26, left: 0, fontSize: 10.5, fontWeight: 600, color: "#28559c", background: "rgba(40,85,156,0.08)", borderRadius: 6, padding: "3px 8px", pointerEvents: "none", whiteSpace: "nowrap" }}>
+                    {cardActive ? "Выбрано: окно квиза — настройки справа" : "Клик по пустому месту — настроить окно"}
+                  </div>
+                )}
                 {step.blocks.length === 0 && <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "40px 0" }}>Пусто — добавьте блок слева</div>}
                 {free ? (
                   <div data-free-stage style={{ position: "relative", height: contentH, ...gridBg }}>
@@ -461,6 +482,7 @@ export function EditorApp() {
           ) : (
             <StepInspector step={step} theme={doc.theme} card={withCard(doc)} setStepField={setStepField} setStepBg={setStepBg} setTheme={setTheme} setCard={setCard}
               gridSize={gridSize} setGridSize={setGridSize} snap={snap} setSnap={setSnap} onToggleLayout={toggleFreeLayout}
+              onApplyBgToAll={applyBgToAll}
               onDeleteStep={() => deleteStep(selStep)} canDelete={doc.steps.length > 1 && step.kind === "question"} />
           )}
         </div>
@@ -488,8 +510,9 @@ function CanvasBlock({ block, accent, selected, dragging, free, freeIndex, conte
 
   let inner: React.ReactNode;
   if (block.type === "heading" || block.type === "text") {
+    // Важно: при выделении сохраняем заданный фон блока (не затираем его подсветкой)
     inner = selected
-      ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: s.align, border: "1px dashed #28559c", background: "rgba(40,85,156,0.05)", outline: "none" }} />
+      ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: s.align, border: "1px dashed #28559c", background: s.bg !== "transparent" ? s.bg : "rgba(40,85,156,0.05)", outline: "none" }} />
       : <div style={{ ...css, width: w, textAlign: s.align, whiteSpace: "pre-wrap" }}>{block.text || "Пустой текст"}</div>;
   } else if (block.type === "image") {
     inner = block.src
@@ -513,8 +536,8 @@ function CanvasBlock({ block, accent, selected, dragging, free, freeIndex, conte
       <div style={{ width: w, display: "flex", flexDirection: "column", gap: 8 }}>
         {(block.options || []).map((o, i) => (
           selected
-            ? <input key={i} value={o} onChange={(e) => onOption(i, e.target.value)} onClick={(e) => e.stopPropagation()} style={{ border: `1px solid ${s.borderColor}`, borderRadius: s.radius || 12, padding: "11px 14px", fontSize: s.fontSize, color: s.color, outline: "none" }} />
-            : <div key={i} style={{ textAlign: "left", border: `1px solid ${s.borderColor || "#e5e7eb"}`, borderRadius: s.radius || 12, padding: "12px 15px", fontSize: s.fontSize, background: "#fff", color: s.color }}>{o}</div>
+            ? <input key={i} value={o} onChange={(e) => onOption(i, e.target.value)} onClick={(e) => e.stopPropagation()} style={{ border: `1px solid ${s.borderColor}`, borderRadius: s.radius || 12, padding: "11px 14px", fontSize: s.fontSize, color: s.color, background: s.bg === "transparent" ? "#fff" : s.bg, outline: "none" }} />
+            : <div key={i} style={{ textAlign: "left", border: `1px solid ${s.borderColor || "#e5e7eb"}`, borderRadius: s.radius || 12, padding: "12px 15px", fontSize: s.fontSize, background: s.bg === "transparent" ? "#fff" : s.bg, color: s.color }}>{o}</div>
         ))}
       </div>
     );
@@ -645,7 +668,7 @@ function OptionsEditor({ options, targets, steps, onChange, onTargets }: {
 }
 
 /* ── step inspector ─────────────────────────────────────── */
-function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, gridSize, setGridSize, snap, setSnap, onToggleLayout, onDeleteStep, canDelete }: {
+function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, setCard, gridSize, setGridSize, snap, setSnap, onToggleLayout, onApplyBgToAll, onDeleteStep, canDelete }: {
   step: Step; theme: QuizDoc["theme"]; card: CardCfg;
   setStepField: <K extends keyof Step>(k: K, v: Step[K]) => void;
   setStepBg: (p: Partial<Step["bg"]>) => void;
@@ -653,10 +676,12 @@ function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, s
   setCard: (p: Partial<CardCfg>) => void;
   gridSize: number; setGridSize: (v: number) => void; snap: boolean; setSnap: (v: boolean) => void;
   onToggleLayout: () => void;
+  onApplyBgToAll: () => void;
   onDeleteStep: () => void; canDelete: boolean;
 }) {
   const free = step.layout === "free";
   const [tab, setTab] = useState<"step" | "window" | "extra">("step");
+  const [bgApplied, setBgApplied] = useState(false);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
@@ -672,6 +697,10 @@ function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, s
           {step.bg.type === "color"
             ? <ColorRow label="Цвет фона" value={step.bg.value} onChange={(v) => setStepBg({ value: v })} />
             : <Field label="Фон-картинка (файл)"><UploadField value={step.bg.value} onChange={(v) => setStepBg({ value: v })} /></Field>}
+          <div onClick={() => { onApplyBgToAll(); setBgApplied(true); setTimeout(() => setBgApplied(false), 1600); }}
+            style={{ textAlign: "center", border: "1px solid", borderColor: bgApplied ? "rgba(22,101,52,0.4)" : "#e5e7eb", color: bgApplied ? "#166534" : "#374151", borderRadius: 9999, padding: "8px 0", fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "color .2s" }}>
+            {bgApplied ? "✓ Применено ко всем шагам" : "Применить фон ко всем шагам"}
+          </div>
           <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: 12, color: "#374151" }}>Свободное размещение блоков</span>

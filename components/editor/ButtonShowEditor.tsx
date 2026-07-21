@@ -10,14 +10,17 @@ const POPUP_BGS: [string, string][] = [
   ["linear-gradient(135deg,#1c2c47,#3f5e8f)", "Тёмный"],
 ];
 
-export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
+export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThanks, onMisc }: {
   settings: QuizSettings;
   onButton: (p: Partial<QuizSettings["button"]>) => void;
   onDisplay: (p: Partial<QuizSettings["display"]>) => void;
   onAnim: (p: Partial<Pick<QuizSettings, "slideAnim" | "openAnim">>) => void;
+  onThanks: (p: Partial<NonNullable<QuizSettings["thanks"]>>) => void;
+  onMisc: (p: Partial<Pick<QuizSettings, "hideBadge">>) => void;
 }) {
   const b = settings.button;
   const d = settings.display;
+  const th = settings.thanks!;
   const [replay, setReplay] = useState(0);
 
   const col = b.position % 3, row = Math.floor(b.position / 3);
@@ -110,6 +113,18 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim }: {
         <Section title="Анимации">
           <Field label="Появление попапа"><Chips value={settings.openAnim} onChange={(v) => { onAnim({ openAnim: v as QuizSettings["openAnim"] }); setReplay((r) => r + 1); }} options={OPEN_ANIM_LABELS} /></Field>
           <Field label="Переключение слайдов"><Chips value={settings.slideAnim} onChange={(v) => { onAnim({ slideAnim: v as QuizSettings["slideAnim"] }); setReplay((r) => r + 1); }} options={SLIDE_ANIM_LABELS} /></Field>
+        </Section>
+
+        <Section title="Экран «Спасибо» после заявки">
+          <Field label="Эмодзи"><input value={th.emoji} onChange={(e) => onThanks({ emoji: e.target.value })} style={inp} /></Field>
+          <Field label="Заголовок"><input value={th.title} onChange={(e) => onThanks({ title: e.target.value })} style={inp} /></Field>
+          <Field label="Текст"><textarea value={th.text} onChange={(e) => onThanks({ text: e.target.value })} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.4 }} /></Field>
+          <Field label="Переадресация после прохождения (URL, можно на маркетплейс)"><input value={th.redirectUrl || ""} onChange={(e) => onThanks({ redirectUrl: e.target.value })} placeholder="https://…  (пусто = без перехода)" style={{ ...inp, fontFamily: "monospace", fontSize: 12 }} /></Field>
+          {!!th.redirectUrl && <Slider label="Задержка перед переходом" v={th.redirectSec ?? 3} min={0} max={15} unit=" сек" onChange={(v) => onThanks({ redirectSec: v })} />}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 12, color: "#374151" }}>Скрыть «Сделано на Квалифай»</span>
+            <Toggle on={!!settings.hideBadge} onClick={() => onMisc({ hideBadge: !settings.hideBadge })} />
+          </div>
         </Section>
       </div>
 

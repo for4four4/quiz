@@ -325,6 +325,7 @@ export function CabinetApp() {
             onAi={() => { setAiOpen(true); setAiPhase("idle"); }}
             onPublishToggle={publishToggle}
             onRemove={removeQuiz}
+            onReload={loadData}
           />
         )}
         {tab === "leads" && (
@@ -680,9 +681,10 @@ function EmptyState({ title, text, action }: { title: string; text: string; acti
   );
 }
 
-function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { quizzes: Quiz[]; leads: Lead[]; onAi: () => void; onPublishToggle: (q: Quiz) => void; onRemove: (q: Quiz) => void }) {
+function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove, onReload }: { quizzes: Quiz[]; leads: Lead[]; onAi: () => void; onPublishToggle: (q: Quiz) => void; onRemove: (q: Quiz) => void; onReload: () => void }) {
   const active = quizzes.filter((q) => q.status === "active").length;
   const [installQuiz, setInstallQuiz] = useState<Quiz | null>(null);
+  const [abQuiz, setAbQuiz] = useState<Quiz | null>(null);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
@@ -732,7 +734,8 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { q
                 {isActive && (
                   <div style={{ display: "flex", gap: 8 }}>
                     <div onClick={() => setInstallQuiz(q)} style={{ flex: 1, textAlign: "center", background: "rgba(40,85,156,0.08)", color: "#28559c", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Установка на сайт</div>
-                    <a href={`/q/${q.slug}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500 }}>Открыть</a>
+                    <div onClick={() => setAbQuiz(q)} title="A/B-тест" style={{ flexShrink: 0, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", color: (q.design as { doc?: { ab?: { enabled?: boolean } } }).doc?.ab?.enabled ? "#166534" : "#374151" }}>A/B</div>
+                    <a href={`/q/${q.slug}`} target="_blank" rel="noreferrer" style={{ flexShrink: 0, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 14px", fontSize: 12.5, fontWeight: 500 }}>Открыть</a>
                   </div>
                 )}
               </div>
@@ -741,6 +744,74 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove }: { q
         </div>
       )}
       {installQuiz && <InstallModal quiz={installQuiz} onClose={() => setInstallQuiz(null)} />}
+      {abQuiz && <AbModal quiz={abQuiz} quizzes={quizzes} onClose={() => setAbQuiz(null)} onSaved={() => { setAbQuiz(null); onReload(); }} />}
+    </div>
+  );
+}
+
+/* ── A/B-тест: вариант B и доля трафика ──────────────────── */
+function AbModal({ quiz, quizzes, onClose, onSaved }: { quiz: Quiz; quizzes: Quiz[]; onClose: () => void; onSaved: () => void }) {
+  const design = quiz.design as { doc?: { ab?: { b?: string; split?: number; enabled?: boolean } } };
+  const ab0 = design.doc?.ab || {};
+  const candidates = quizzes.filter((q) => q.id !== quiz.id && q.status === "active");
+  const [enabled, setEnabled] = useState(!!ab0.enabled);
+  const [bSlug, setBSlug] = useState(ab0.b || candidates[0]?.slug || "");
+  const [split, setSplit] = useState(ab0.split ?? 50);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const newDesign = { ...(quiz.design as Record<string, unknown>), doc: { ...(design.doc as Record<string, unknown>), ab: { b: bSlug, split, enabled: enabled && !!bSlug } } };
+      await api.updateQuiz(quiz.id, { design: newDesign as Quiz["design"] });
+      onSaved();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Ошибка");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={overlay(70)}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...modalBox, width: 480, padding: 26 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontSize: 17, fontWeight: 600 }}>A/B-тест · «{quiz.name}»</div>
+          <div onClick={onClose} style={closeBtnSm}>✕</div>
+        </div>
+        <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 18, lineHeight: 1.55 }}>
+          Часть посетителей увидит другой квиз (вариант B). Показы и заявки каждого варианта считаются отдельно —
+          сравнивайте конверсию в «Заявках» и на дашборде.
+        </div>
+
+        {candidates.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#9ca3af", background: "#F8F9FB", borderRadius: 12, padding: "14px 16px" }}>
+            Нужен второй опубликованный квиз — создайте вариант B (можно скопировать этот квиз и изменить обложку/вопросы), опубликуйте его и вернитесь сюда.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Тест включён</span>
+              <span onClick={() => setEnabled((v) => !v)} style={{ width: 34, height: 20, borderRadius: 9999, background: enabled ? "#28559c" : "#d1d5db", position: "relative", cursor: "pointer", display: "inline-block" }}>
+                <span style={{ position: "absolute", top: 2, left: enabled ? 16 : 2, width: 16, height: 16, borderRadius: 9999, background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left .2s" }} />
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Вариант B (другой квиз)</div>
+              <select value={bSlug} onChange={(e) => setBSlug(e.target.value)} style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+                {candidates.map((q) => <option key={q.id} value={q.slug}>{q.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+                <span>Доля трафика на вариант B</span><b style={{ color: "#111827" }}>{split}%</b>
+              </div>
+              <input type="range" min={5} max={95} step={5} value={split} onChange={(e) => setSplit(+e.target.value)} style={{ width: "100%", accentColor: "#28559c" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginTop: 2 }}><span>A: {100 - split}%</span><span>B: {split}%</span></div>
+            </div>
+            <div onClick={save} style={{ background: "#28559c", color: "#fff", borderRadius: 9999, padding: "12px 0", fontSize: 13.5, fontWeight: 500, textAlign: "center", cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Сохраняем…" : "Сохранить"}</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
