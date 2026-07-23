@@ -698,6 +698,7 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove, onRel
   const active = quizzes.filter((q) => q.status === "active").length;
   const [installQuiz, setInstallQuiz] = useState<Quiz | null>(null);
   const [abQuiz, setAbQuiz] = useState<Quiz | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
@@ -726,11 +727,33 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove, onRel
           {quizzes.map((q) => {
             const leadCount = leads.filter((l) => l.quiz_id === q.id).length;
             const isActive = q.status === "active";
+            const abOn = !!(q.design as { doc?: { ab?: { enabled?: boolean } } }).doc?.ab?.enabled;
             return (
-              <div key={q.id} style={{ background: "#ffffff", borderRadius: 20, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div key={q.id} style={{ background: "#ffffff", borderRadius: 20, padding: 22, display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 9999, background: isActive ? "rgba(22,101,52,0.10)" : "rgba(17,24,39,0.07)", color: isActive ? "#166534" : "#6b7280" }}>{isActive ? "Активен" : "Черновик"}</div>
-                  <div onClick={() => onRemove(q)} title="Удалить" style={{ color: "#9ca3af", fontSize: 15, cursor: "pointer" }}>🗑</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 9999, background: isActive ? "rgba(22,101,52,0.10)" : "rgba(17,24,39,0.07)", color: isActive ? "#166534" : "#6b7280" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 9999, background: isActive ? "#22c55e" : "#9ca3af" }} />
+                      {isActive ? "Активен" : "Черновик"}
+                    </span>
+                    {abOn && <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 9999, background: "rgba(40,85,156,0.10)", color: "#28559c" }}>A/B</span>}
+                  </div>
+                  {/* Меню действий (⋯) — второстепенные операции убраны из основного ряда */}
+                  <div style={{ position: "relative" }}>
+                    <button onClick={() => setMenuFor(menuFor === q.id ? null : q.id)} title="Ещё" aria-label="Действия" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 9999, border: "none", background: menuFor === q.id ? "#eef1f6" : "transparent", color: "#6b7280", cursor: "pointer", flexShrink: 0 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="12" cy="19" r="1.7" /></svg>
+                    </button>
+                    {menuFor === q.id && (
+                      <div style={{ position: "absolute", top: 36, right: 0, zIndex: 30, width: 210, background: "#fff", borderRadius: 14, boxShadow: "0 12px 40px rgba(17,24,39,0.16)", border: "1px solid #f0f0f0", padding: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+                        {isActive && <MenuItem icon="↗" label="Открыть квиз" onClick={() => { setMenuFor(null); window.open(`/q/${q.slug}`, "_blank"); }} />}
+                        {isActive && <MenuItem icon={INSTALL_ICON} label="Установка на сайт" onClick={() => { setMenuFor(null); setInstallQuiz(q); }} />}
+                        {isActive && <MenuItem icon="⚗" label={abOn ? "A/B-тест · включён" : "A/B-тест"} accent={abOn} onClick={() => { setMenuFor(null); setAbQuiz(q); }} />}
+                        <MenuItem icon={isActive ? PAUSE_ICON : PLAY_ICON} label={isActive ? "Снять с публикации" : "Опубликовать"} onClick={() => { setMenuFor(null); onPublishToggle(q); }} />
+                        <div style={{ height: 1, background: "#f0f0f0", margin: "4px 6px" }} />
+                        <MenuItem icon="🗑" label="Удалить квиз" danger onClick={() => { setMenuFor(null); onRemove(q); }} />
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>{q.name}</div>
@@ -740,27 +763,62 @@ function QuizzesSection({ quizzes, leads, onAi, onPublishToggle, onRemove, onRel
                   <span><b style={{ color: "#111827", fontWeight: 600 }}>{q.steps.length}</b> вопр.</span>
                   <span><b style={{ color: "#111827", fontWeight: 600 }}>{leadCount}</b> заявок</span>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Link href={`${routes.editor}?id=${q.id}`} style={{ flex: 1, minWidth: 90, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500 }}>Редактор</Link>
-                  <div onClick={() => onPublishToggle(q)} style={{ flex: 1, minWidth: 90, textAlign: "center", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 500, cursor: "pointer", background: isActive ? "#F5F5F5" : "#28559c", color: isActive ? "#374151" : "#fff" }}>{isActive ? "Снять" : "Опубликовать"}</div>
+                {/* Один понятный ряд: слева — редактор, справа — главное действие */}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Link href={`${routes.editor}?id=${q.id}`} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 500, color: "#111827", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                    Редактор
+                  </Link>
+                  {isActive ? (
+                    <div onClick={() => setInstallQuiz(q)} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#fff", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      {INSTALL_ICON_WHITE}
+                      Установить
+                    </div>
+                  ) : (
+                    <div onClick={() => onPublishToggle(q)} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#fff", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Опубликовать</div>
+                  )}
                 </div>
-                {isActive && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <div onClick={() => setInstallQuiz(q)} style={{ flex: 1, textAlign: "center", background: "rgba(40,85,156,0.08)", color: "#28559c", borderRadius: 9999, padding: "8px 0", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Установка на сайт</div>
-                    <div onClick={() => setAbQuiz(q)} title="A/B-тест" style={{ flexShrink: 0, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", color: (q.design as { doc?: { ab?: { enabled?: boolean } } }).doc?.ab?.enabled ? "#166534" : "#374151" }}>A/B</div>
-                    <a href={`/q/${q.slug}`} target="_blank" rel="noreferrer" style={{ flexShrink: 0, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 14px", fontSize: 12.5, fontWeight: 500 }}>Открыть</a>
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       )}
+      {/* Клик вне меню действий — закрыть */}
+      {menuFor && <div onClick={() => setMenuFor(null)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />}
       {installQuiz && <InstallModal quiz={installQuiz} onClose={() => setInstallQuiz(null)} />}
       {abQuiz && <AbModal quiz={abQuiz} quizzes={quizzes} onClose={() => setAbQuiz(null)} onSaved={() => { setAbQuiz(null); onReload(); }} />}
     </div>
   );
 }
+
+/* ── Пункт меню действий над квизом ──────────────────────── */
+function MenuItem({ icon, label, onClick, danger, accent }: { icon: ReactNode; label: string; onClick: () => void; danger?: boolean; accent?: boolean }) {
+  const color = danger ? "#b91c1c" : accent ? "#28559c" : "#374151";
+  return (
+    <div
+      onClick={onClick}
+      onMouseOver={(e) => (e.currentTarget.style.background = danger ? "rgba(185,28,28,0.06)" : "#f5f7fa")}
+      onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 9, fontSize: 13, fontWeight: 500, color, cursor: "pointer", transition: "background .12s" }}
+    >
+      <span style={{ width: 18, display: "inline-flex", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{icon}</span>
+      {label}
+    </div>
+  );
+}
+
+const INSTALL_ICON = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 18l6-6-6-6" /><path d="M8 6l-6 6 6 6" /></svg>
+);
+const INSTALL_ICON_WHITE = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 18l6-6-6-6" /><path d="M8 6l-6 6 6 6" /></svg>
+);
+const PAUSE_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+);
+const PLAY_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l11-7z" /></svg>
+);
 
 /* ── A/B-тест: вариант B и доля трафика ──────────────────── */
 function AbModal({ quiz, quizzes, onClose, onSaved }: { quiz: Quiz; quizzes: Quiz[]; onClose: () => void; onSaved: () => void }) {
