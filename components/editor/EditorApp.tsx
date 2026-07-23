@@ -285,8 +285,13 @@ export function EditorApp() {
     e.preventDefault(); e.stopPropagation();
     const b = doc.steps[selStepRef.current]?.blocks.find((x) => x.id === id);
     const p0 = b?.pos || { x: 0, y: 0, w: 220 };
-    const sx = e.clientX, sy = e.clientY, h0 = p0.h || 120;
-    const move = (ev: PointerEvent) => patchBlockPos(id, { w: Math.max(40, snapVal(p0.w + ev.clientX - sx)), h: Math.max(24, snapVal(h0 + ev.clientY - sy)) });
+    // Стартовые размеры берём из реально отрисованного блока — иначе первый
+    // же сдвиг «прыгает» к дефолту (например у только что добавленной картинки).
+    const outerEl = (e.currentTarget as HTMLElement).closest("[data-id]") as HTMLElement | null;
+    const w0 = p0.w || outerEl?.offsetWidth || 220;
+    const h0 = p0.h || outerEl?.offsetHeight || b?.style.height || 120;
+    const sx = e.clientX, sy = e.clientY;
+    const move = (ev: PointerEvent) => patchBlockPos(id, { w: Math.max(40, snapVal(w0 + ev.clientX - sx)), h: Math.max(24, snapVal(h0 + ev.clientY - sy)) });
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = ""; touch(); };
     document.body.style.userSelect = "none";
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
@@ -504,8 +509,13 @@ function CanvasBlock({ block, accent, selected, dragging, free, freeIndex, conte
   const w = free ? "100%" : `${s.width}%`;
   const css = blockCss(s) as CSSProperties;
   const pos = block.pos || { x: 0, y: freeIndex * 70, w: contentW };
+  const isMedia = block.type === "image" || block.type === "slider";
+  // В свободном режиме контейнер (и рамка выделения) должен иметь конкретную
+  // высоту, чтобы содержимое заполняло его на 100% и совпадало с выделением.
+  // Для медиа берём заданную высоту, если ресайзом ещё не задан pos.h.
+  const freeHeight = pos.h ?? (isMedia ? (s.height || 160) : undefined);
   const outer: CSSProperties = free
-    ? { position: "absolute", left: pos.x, top: pos.y, width: pos.w, height: pos.h, outline: selected ? "2px solid #28559c" : "2px dashed rgba(40,85,156,0.25)", outlineOffset: 2, borderRadius: 6, cursor: "move", opacity: dragging ? 0.5 : 1 }
+    ? { position: "absolute", left: pos.x, top: pos.y, width: pos.w, height: freeHeight, outline: selected ? "2px solid #28559c" : "2px dashed rgba(40,85,156,0.25)", outlineOffset: 2, borderRadius: 6, cursor: "move", opacity: dragging ? 0.5 : 1, boxSizing: "border-box" }
     : { position: "relative", marginTop: s.marginTop, outline: selected ? "2px solid #28559c" : "2px solid transparent", outlineOffset: 3, borderRadius: 6, cursor: "pointer", opacity: dragging ? 0.4 : 1, transition: "opacity .12s ease" };
   const alignWrap: CSSProperties = { display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" };
 
@@ -516,14 +526,17 @@ function CanvasBlock({ block, accent, selected, dragging, free, freeIndex, conte
       ? <input value={block.text || ""} onChange={(e) => onText(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ ...css, width: w, textAlign: s.align, border: "1px dashed #28559c", background: s.bg !== "transparent" ? s.bg : "rgba(40,85,156,0.05)", outline: "none" }} />
       : <div style={{ ...css, width: w, textAlign: s.align, whiteSpace: "pre-wrap" }}>{block.text || "Пустой текст"}</div>;
   } else if (block.type === "image") {
+    // В free содержимое заполняет контейнер (height 100%) — рамка и картинка совпадают.
+    const mediaH = free ? "100%" : (s.height || (block.src ? "auto" : 160));
     inner = block.src
-      ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: s.height || (free ? "100%" : "auto"), objectFit: "cover", borderRadius: s.radius }} />
-      : <div style={{ width: w, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка · загрузите файл</div>;
+      ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: w, height: mediaH, objectFit: "cover", borderRadius: s.radius, display: "block" }} />
+      : <div style={{ width: w, height: mediaH, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13, boxSizing: "border-box" }}>Картинка · загрузите файл</div>;
   } else if (block.type === "slider") {
     const imgs = block.images || [];
+    const mediaH = free ? "100%" : (s.height || (imgs.length ? 200 : 180));
     inner = imgs.length
-      ? /* eslint-disable-next-line @next/next/no-img-element */ <div style={{ width: w, height: s.height || 200, borderRadius: s.radius, overflow: "hidden", position: "relative", background: "#eef1f6" }}><img src={imgs[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /><span style={{ position: "absolute", bottom: 6, right: 8, background: "rgba(0,0,0,.5)", color: "#fff", fontSize: 11, borderRadius: 999, padding: "2px 8px" }}>▦ {imgs.length}</span></div>
-      : <div style={{ width: w, height: s.height || 180, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Слайдер · добавьте картинки</div>;
+      ? /* eslint-disable-next-line @next/next/no-img-element */ <div style={{ width: w, height: mediaH, borderRadius: s.radius, overflow: "hidden", position: "relative", background: "#eef1f6", boxSizing: "border-box" }}><img src={imgs[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /><span style={{ position: "absolute", bottom: 6, right: 8, background: "rgba(0,0,0,.5)", color: "#fff", fontSize: 11, borderRadius: 999, padding: "2px 8px" }}>▦ {imgs.length}</span></div>
+      : <div style={{ width: w, height: mediaH, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13, boxSizing: "border-box" }}>Слайдер · добавьте картинки</div>;
   } else if (block.type === "html") {
     inner = <div style={{ width: w, border: "1px dashed #d1d5db", borderRadius: 8, padding: 10, fontSize: 12, fontFamily: "monospace", color: "#6b7280", overflow: "hidden" }}>{"</>"} HTML/JS блок</div>;
   } else if (block.type === "button") {

@@ -187,7 +187,11 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
               const view = <BlockView block={b} accent={accent} free={free} contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />;
               if (!free) return <div key={b.id}>{view}</div>;
               const p = b.pos || { x: 0, y: idx * 70, w: card.width - card.padX * 2 };
-              return <div key={b.id} style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: p.h }}>{view}</div>;
+              // Медиа заполняет контейнер по высоте — берём заданную высоту,
+              // если ресайзом не задан pos.h (иначе картинка вылезет за рамку).
+              const isMedia = b.type === "image" || b.type === "slider";
+              const wrapH = p.h ?? (isMedia ? (b.style.height || 160) : undefined);
+              return <div key={b.id} style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: wrapH }}>{view}</div>;
             })}
             {step.kind === "contact" && error && <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 10, textAlign: "center" }}>{error}</div>}
           </div>
@@ -209,10 +213,12 @@ function BlockView({ block, accent, free, contact, setContact, onPick, onButton,
   sending: boolean;
 }) {
   const s = block.style;
+  const isMedia = block.type === "image" || block.type === "slider";
   const outer: CSSProperties = free
-    ? { display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" }
+    ? { display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center", ...(isMedia ? { height: "100%" } : {}) }
     : { marginTop: s.marginTop, display: "flex", justifyContent: s.align === "left" ? "flex-start" : s.align === "right" ? "flex-end" : "center" };
   const innerWidth = free ? "100%" : `${s.width}%`;
+  const mediaH = free ? "100%" : undefined;
   const css = blockCss(s) as CSSProperties;
 
   if (block.type === "heading" || block.type === "text") {
@@ -223,14 +229,14 @@ function BlockView({ block, accent, free, contact, setContact, onPick, onButton,
     );
   }
   if (block.type === "slider") {
-    return <div style={outer}><SliderBlock images={block.images || []} width={innerWidth} height={s.height || 200} radius={s.radius} /></div>;
+    return <div style={outer}><SliderBlock images={block.images || []} width={innerWidth} height={mediaH ?? (s.height || 200)} radius={s.radius} /></div>;
   }
   if (block.type === "image") {
     return (
       <div style={outer}>
         {block.src
-          ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: innerWidth, height: s.height || (free ? "100%" : "auto"), objectFit: "cover", borderRadius: s.radius, marginTop: 0, border: s.borderWidth ? `${s.borderWidth}px solid ${s.borderColor}` : "none" }} />
-          : <div style={{ width: innerWidth, height: s.height || 160, borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка</div>}
+          ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={block.src} alt="" style={{ width: innerWidth, height: mediaH ?? (s.height || "auto"), objectFit: "cover", borderRadius: s.radius, marginTop: 0, display: "block", border: s.borderWidth ? `${s.borderWidth}px solid ${s.borderColor}` : "none" }} />
+          : <div style={{ width: innerWidth, height: mediaH ?? (s.height || 160), borderRadius: s.radius, background: "#eef1f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>Картинка</div>}
       </div>
     );
   }
@@ -328,7 +334,7 @@ function collectUtm(): Record<string, string> {
   return out;
 }
 
-function SliderBlock({ images, width, height, radius }: { images: string[]; width: string; height: number; radius: number }) {
+function SliderBlock({ images, width, height, radius }: { images: string[]; width: string; height: number | string; radius: number }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     if (images.length <= 1) return;
