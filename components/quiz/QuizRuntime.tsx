@@ -26,6 +26,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [consent, setConsent] = useState(false);
 
   const sessionRef = useRef("");
   const trackedRef = useRef<Set<string>>(new Set());
@@ -129,6 +130,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
     setError("");
     fireGoal(goal);
     if (!contact.phone.trim()) { setError("Укажите телефон"); return; }
+    if (!consent) { setError("Подтвердите согласие на обработку персональных данных"); return; }
     setSending(true);
     try {
       const res = await fetch("/api/public/lead", {
@@ -191,6 +193,12 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
               const wrapH = p.h ?? (isMedia ? (b.style.height || 160) : undefined);
               return <div key={b.id} style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: wrapH }}>{view}</div>;
             })}
+            {step.kind === "contact" && (
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: "#6b7280", lineHeight: 1.45, marginTop: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ width: 15, height: 15, marginTop: 1, accentColor: accent, flexShrink: 0, cursor: "pointer" }} />
+                <span>Согласен на обработку персональных данных и с <a href="https://qvalify.ru/dokumenty#policy" target="_blank" rel="noreferrer" style={{ color: accent }}>политикой конфиденциальности</a></span>
+              </label>
+            )}
             {step.kind === "contact" && error && <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 10, textAlign: "center" }}>{error}</div>}
           </div>
         )}

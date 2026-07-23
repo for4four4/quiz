@@ -12,6 +12,7 @@ export function AuthForm() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
+  const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -22,8 +23,12 @@ export function AuthForm() {
       setError("Введите почту и пароль");
       return;
     }
-    if (mode === "register" && password.length < 6) {
-      setError("Пароль — минимум 6 символов");
+    if (mode === "register" && password.length < 8) {
+      setError("Пароль — минимум 8 символов");
+      return;
+    }
+    if (mode === "register" && !agree) {
+      setError("Нужно принять оферту и согласие на обработку данных");
       return;
     }
     setBusy(true);
@@ -90,6 +95,23 @@ export function AuthForm() {
           <Field label="Почта" value={email} onChange={setEmail} placeholder="you@company.ru" type="email" />
           <Field label="Пароль" value={password} onChange={setPassword} placeholder="••••••••" type="password" />
 
+          {mode === "register" && (
+            <label style={{ display: "flex", gap: 9, alignItems: "flex-start", fontSize: 11.5, color: "#6b7280", lineHeight: 1.5, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={agree}
+                onChange={(e) => setAgree(e.target.checked)}
+                style={{ width: 16, height: 16, marginTop: 1, accentColor: "#28559c", flexShrink: 0, cursor: "pointer" }}
+              />
+              <span>
+                Принимаю{" "}
+                <Link href={`${routes.dokumenty}#oferta`} style={{ color: "#28559c" }}>оферту</Link>{" "}
+                и даю{" "}
+                <Link href={`${routes.dokumenty}#consent`} style={{ color: "#28559c" }}>согласие на обработку персональных данных</Link>.
+              </span>
+            </label>
+          )}
+
           {error && <div style={{ color: "#b91c1c", fontSize: 13 }}>{error}</div>}
 
           <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>
@@ -97,11 +119,13 @@ export function AuthForm() {
           </button>
         </form>
 
-        <p style={{ fontSize: 11.5, color: "#9ca3af", textAlign: "center", marginTop: 16 }}>
-          Продолжая, вы соглашаетесь с{" "}
-          <Link href={`${routes.dokumenty}#oferta`} style={{ color: "#6b7280" }}>офертой</Link> и{" "}
-          <Link href={`${routes.dokumenty}#policy`} style={{ color: "#6b7280" }}>политикой конфиденциальности</Link>.
-        </p>
+        {mode === "login" && (
+          <p style={{ fontSize: 11.5, color: "#9ca3af", textAlign: "center", marginTop: 16 }}>
+            Продолжая, вы соглашаетесь с{" "}
+            <Link href={`${routes.dokumenty}#oferta`} style={{ color: "#6b7280" }}>офертой</Link> и{" "}
+            <Link href={`${routes.dokumenty}#policy`} style={{ color: "#6b7280" }}>политикой конфиденциальности</Link>.
+          </p>
+        )}
       </div>
     </main>
   );

@@ -152,9 +152,19 @@
         name.placeholder = "Ваше имя";
         var phone = el("input", "width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;font-size:14px;margin-top:10px;font-family:inherit;");
         phone.placeholder = "+7 (___) ___-__-__"; phone.type = "tel";
+        // Согласие на обработку ПДн (152-ФЗ) — обязательно перед отправкой
+        var agreeWrap = el("label", "display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:11.5px;color:#6b7280;line-height:1.45;cursor:pointer;");
+        var agree = el("input", "width:15px;height:15px;margin-top:1px;accent-color:" + accent + ";flex-shrink:0;cursor:pointer;");
+        agree.type = "checkbox";
+        var agreeTxt = el("span", null, "Согласен на обработку персональных данных и с ");
+        var agreeLink = el("a", "color:" + accent + ";", "политикой конфиденциальности");
+        agreeLink.href = origin + "/dokumenty#policy"; agreeLink.target = "_blank"; agreeLink.rel = "noreferrer";
+        agreeTxt.appendChild(agreeLink);
+        agreeWrap.appendChild(agree); agreeWrap.appendChild(agreeTxt);
         var send = el("button", "width:100%;background:" + accent + ";color:#fff;border:none;border-radius:12px;padding:13px 0;font-size:15px;font-weight:500;margin-top:14px;cursor:pointer;font-family:inherit;", "Получить результат");
         send.onclick = function () {
           if (!phone.value.trim()) { phone.style.borderColor = "#e0342f"; return; }
+          if (!agree.checked) { agreeWrap.style.color = "#e0342f"; return; }
           send.disabled = true; send.textContent = "Отправляем…";
           api("/api/public/lead", {
             method: "POST", headers: { "content-type": "application/json" },
@@ -169,7 +179,7 @@
             }
           }).catch(function () { send.disabled = false; send.textContent = "Получить результат"; });
         };
-        wrap.appendChild(name); wrap.appendChild(phone); wrap.appendChild(send);
+        wrap.appendChild(name); wrap.appendChild(phone); wrap.appendChild(agreeWrap); wrap.appendChild(send);
       }
     }
     step();
