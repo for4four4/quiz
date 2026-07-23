@@ -58,6 +58,27 @@ export type AccountSettings = {
   emailNotify?: string;
 };
 
+export type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  company: string;
+  plan: string;
+  lead_limit: number;
+  role: string;
+  valid_until: string | null;
+  created_at: string;
+  leads: number;
+  quizzes: number;
+};
+
+export type SiteSettings = {
+  metrikaId?: string;
+  gaId?: string;
+  yandexVerify?: string;
+  googleVerify?: string;
+};
+
 export type PerQuizStat = { open: number; start: number; contact: number; lead: number; steps: Record<string, number> };
 export type Stats = {
   days: number;
@@ -130,6 +151,14 @@ export const api = {
     }).then((r) => j<{ integration: Integration }>(r)),
   deleteIntegration: (kind: string) =>
     fetch(`/api/integrations?kind=${encodeURIComponent(kind)}`, { method: "DELETE" }).then((r) => j(r)),
+
+  // Админка
+  adminUsers: () => fetch("/api/admin/users").then((r) => j<{ users: AdminUser[] }>(r)),
+  adminUpdateUser: (id: string, patch: { plan?: string; leadLimit?: number; validUntil?: string | null; role?: string }) =>
+    fetch(`/api/admin/users/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then((r) => j(r)),
+  adminSettings: () => fetch("/api/admin/settings").then((r) => j<{ settings: SiteSettings }>(r)),
+  adminSaveSettings: (settings: SiteSettings) =>
+    fetch("/api/admin/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }).then((r) => j<{ settings: SiteSettings }>(r)),
 
   generate: (body: {
     business: string;

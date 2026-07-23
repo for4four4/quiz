@@ -61,6 +61,14 @@ ALTER TABLE users   ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}
 ALTER TABLE users   ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';    -- user | admin (доступ к /admin)
 ALTER TABLE users   ADD COLUMN IF NOT EXISTS valid_until DATE;                      -- срок действия тарифа
 
+-- Глобальные настройки сайта (singleton): аналитика, верификация, контент-CMS
+CREATE TABLE IF NOT EXISTS site_settings (
+  id   INTEGER PRIMARY KEY DEFAULT 1,
+  data JSONB NOT NULL DEFAULT '{}',
+  CONSTRAINT site_settings_single CHECK (id = 1)
+);
+INSERT INTO site_settings (id, data) VALUES (1, '{}') ON CONFLICT (id) DO NOTHING;
+
 -- События посетителей для воронки и аналитики шагов
 CREATE TABLE IF NOT EXISTS events (
   id          BIGSERIAL PRIMARY KEY,

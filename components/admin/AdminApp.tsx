@@ -1,26 +1,13 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
+import { api, type AdminUser, type SiteSettings } from "@/lib/client/api";
 
-type Tab = "clients" | "plans" | "support";
+type Tab = "clients" | "settings" | "plans" | "support";
 
-const statusStyles = {
-  active: { stBg: "rgba(22,101,52,0.1)", stColor: "#166534", status: "Активен" },
-  trial: { stBg: "rgba(40,85,156,0.1)", stColor: "#28559c", status: "Триал" },
-  overdue: { stBg: "rgba(224,52,47,0.1)", stColor: "#e0342f", status: "Просрочен" },
-} as const;
-
-const allClients = [
-  { company: "Кухни-СПб", email: "german@kuhni-spb.ru", initials: "КС", avBg: "#28559c", plan: "Про · 300", usage: "212 / 318", paidTill: "12 авг", since: "апр 2026", ...statusStyles.active },
-  { company: "РемонтПрофи", email: "alina@remontprofi.ru", initials: "РП", avBg: "#0F1F3C", plan: "Бизнес · 1000", usage: "640 / 1000", paidTill: "3 авг", since: "май 2026", ...statusStyles.active },
-  { company: "Дента-Люкс", email: "sergey@dentalux.ru", initials: "ДЛ", avBg: "#4084f4", plan: "Старт · 100", usage: "44 / 118", paidTill: "28 июл", since: "май 2026", ...statusStyles.active },
-  { company: "Автошкола Драйв", email: "olga@drive-ekb.ru", initials: "АД", avBg: "#1e437d", plan: "Про · 300", usage: "96 / 300", paidTill: "21 июл", since: "июн 2026", ...statusStyles.active },
-  { company: "FitLife", email: "dmitry@fitlife-nsk.ru", initials: "FL", avBg: "#28559c", plan: "Старт · 100", usage: "12 / 100", paidTill: "—", since: "июл 2026", ...statusStyles.trial },
-  { company: "Юрист-Групп", email: "elena@urist-group.ru", initials: "ЮГ", avBg: "#0F1F3C", plan: "Про · 300", usage: "287 / 300", paidTill: "9 июл", since: "апр 2026", ...statusStyles.overdue },
-  { company: "Мебель-Арт", email: "igor@mebel-art.ru", initials: "МА", avBg: "#4084f4", plan: "Старт · 100", usage: "3 / 100", paidTill: "—", since: "июл 2026", ...statusStyles.trial },
-];
+const PLAN_NAMES: Record<string, string> = { free: "Free", start: "Старт", pro: "Про", biz: "Бизнес" };
 
 const rawTickets = [
   { id: 341, subject: "Не приходят заявки в Telegram", company: "Дента-Люкс", when: "14 мин назад", st: "open", initials: "СВ", message: "Добрый день! Вчера подключили бота, но уведомления о новых заявках в Телеграм не приходят. В кабинете заявки видны. Что проверить?" },
@@ -42,9 +29,10 @@ function Icon({ paths }: { paths: string[] }) {
   );
 }
 const navDef: { id: Tab; label: string; paths: string[]; badge?: string }[] = [
-  { id: "clients", label: "Клиенты", paths: ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"] },
+  { id: "clients", label: "Пользователи", paths: ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"] },
+  { id: "settings", label: "Настройки сайта", paths: ["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"] },
   { id: "plans", label: "Тарифы", paths: ["M12 1v22", "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"] },
-  { id: "support", label: "Поддержка", paths: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"], badge: "3" },
+  { id: "support", label: "Поддержка", paths: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"] },
 ];
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
@@ -53,7 +41,15 @@ const planNames: Record<string, string> = { start: "Старт", pro: "Про", 
 
 export function AdminApp() {
   const [tab, setTab] = useState<Tab>("clients");
-  const [filter, setFilter] = useState("Все");
+  const [filter, setFilter] = useState("");
+
+  // Реальные пользователи
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [editUser, setEditUser] = useState<AdminUser | null>(null);
+  const loadUsers = () => { setLoadingUsers(true); api.adminUsers().then(({ users }) => setUsers(users)).catch(() => {}).finally(() => setLoadingUsers(false)); };
+  useEffect(() => { loadUsers(); }, []);
+
   const [prices, setPrices] = useState<Record<string, number>>({ start: 1900, pro: 3900, biz: 7900 });
   const [limits, setLimits] = useState<Record<string, number>>({ start: 100, pro: 300, biz: 1000 });
   const [enabled, setEnabled] = useState<Record<string, boolean>>({ start: true, pro: true, biz: true });
@@ -63,8 +59,11 @@ export function AdminApp() {
   const [replies, setReplies] = useState<Record<number, string>>({ 1: "Добрый день! Да, перенос лимита работает автоматически — остаток уже виден у вас в кабинете." });
   const [closed, setClosed] = useState<Record<number, boolean>>({});
 
-  const fmap: Record<string, string> = { Активные: "Активен", Триал: "Триал", Просроченные: "Просрочен" };
-  const clients = filter === "Все" ? allClients : allClients.filter((c) => c.status === fmap[filter]);
+  const q = filter.trim().toLowerCase();
+  const shownUsers = q ? users.filter((u) => (u.email + " " + u.name + " " + u.company).toLowerCase().includes(q)) : users;
+  const paidCount = users.filter((u) => u.plan && u.plan !== "free").length;
+  const totalLeads = users.reduce((s, u) => s + Number(u.leads || 0), 0);
+  const totalQuizzes = users.reduce((s, u) => s + Number(u.quizzes || 0), 0);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#EFEFEF", color: "#111827" }}>
@@ -110,49 +109,51 @@ export function AdminApp() {
         {tab === "clients" && (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-              <div><h1 style={h1}>Клиенты</h1><div style={sub}>37 компаний · 29 на платных тарифах</div></div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {["Все", "Активные", "Триал", "Просроченные"].map((label) => {
-                  const active = filter === label;
-                  return (
-                    <div key={label} onClick={() => setFilter(label)} style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 500, borderRadius: 9999, padding: "8px 16px", border: `1px solid ${active ? "#111827" : "#e5e7eb"}`, background: active ? "#111827" : "#ffffff", color: active ? "#ffffff" : "#111827", transition: "all .2s" }}>{label}</div>
-                  );
-                })}
-              </div>
+              <div><h1 style={h1}>Пользователи</h1><div style={sub}>{users.length} всего · {paidCount} на платных тарифах</div></div>
+              <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Поиск по почте, имени, компании" style={{ border: "1px solid #e5e7eb", borderRadius: 9999, padding: "9px 16px", fontSize: 13, fontFamily: "inherit", width: 280, maxWidth: "100%", outlineColor: "#28559c" }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 20 }}>
-              <Kpi label="MRR" value="96 300 ₽" note="+18% к июню" noteColor="#166534" />
-              <Kpi label="Новых за июль" value="9" note="из них 6 — с платным тарифом" noteColor="#166534" />
-              <Kpi label="Заявок через платформу" value="2 418" note="за 30 дней" noteColor="#6b7280" />
-              <Kpi label="Отток" value="1" note="компания за месяц" noteColor="#e0342f" />
+              <Kpi label="Пользователей" value={fmt(users.length)} note={`${paidCount} на платных`} noteColor="#166534" />
+              <Kpi label="Квизов" value={fmt(totalQuizzes)} note="создано всего" noteColor="#6b7280" />
+              <Kpi label="Заявок через платформу" value={fmt(totalLeads)} note="за всё время" noteColor="#6b7280" />
+              <Kpi label="Free" value={fmt(users.length - paidCount)} note="без оплаты" noteColor="#6b7280" />
             </div>
             <div style={{ background: "#ffffff", borderRadius: 16, overflow: "hidden" }}>
               <div style={{ overflowX: "auto" }}>
-                <div style={{ minWidth: 840 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.9fr 0.9fr 0.9fr 104px", gap: 16, padding: "14px 24px", borderBottom: "1px solid #f0f0f0", fontSize: 11.5, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    <div>Компания</div><div>Тариф</div><div>Заявок / лимит</div><div>Оплата до</div><div>Регистрация</div><div>Статус</div>
+                <div style={{ minWidth: 860 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 0.9fr 0.9fr 0.8fr 96px", gap: 16, padding: "14px 24px", borderBottom: "1px solid #f0f0f0", fontSize: 11.5, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <div>Пользователь</div><div>Тариф</div><div>Заявок / лимит</div><div>Действует до</div><div>Регистрация</div><div>Действие</div>
                   </div>
-                  {clients.map((c) => (
-                    <div key={c.email} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.9fr 0.9fr 0.9fr 104px", gap: 16, alignItems: "center", padding: "14px 24px", borderBottom: "1px solid #f7f7f7", fontSize: 13 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 9999, background: c.avBg, color: "#ffffff", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{c.initials}</div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.company}</div>
-                          <div style={{ fontSize: 11.5, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.email}</div>
+                  {loadingUsers ? (
+                    <div style={{ padding: "28px 24px", color: "#9ca3af", fontSize: 13 }}>Загрузка…</div>
+                  ) : shownUsers.length === 0 ? (
+                    <div style={{ padding: "28px 24px", color: "#9ca3af", fontSize: 13 }}>Пользователи не найдены</div>
+                  ) : shownUsers.map((u) => {
+                    const expired = u.valid_until && new Date(u.valid_until) < new Date();
+                    return (
+                      <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 0.9fr 0.9fr 0.8fr 96px", gap: 16, alignItems: "center", padding: "14px 24px", borderBottom: "1px solid #f7f7f7", fontSize: 13 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 9999, background: "#28559c", color: "#ffffff", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{(u.name || u.email).slice(0, 2).toUpperCase()}</div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.name || u.company || "—"} {u.role === "admin" && <span style={{ fontSize: 10, color: "#28559c" }}>· admin</span>}</div>
+                            <div style={{ fontSize: 11.5, color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</div>
+                          </div>
                         </div>
+                        <div style={{ whiteSpace: "nowrap" }}><span style={{ fontSize: 11.5, fontWeight: 600, padding: "3px 10px", borderRadius: 9999, background: u.plan === "free" ? "rgba(17,24,39,0.07)" : "rgba(40,85,156,0.1)", color: u.plan === "free" ? "#6b7280" : "#28559c" }}>{PLAN_NAMES[u.plan] || u.plan}</span></div>
+                        <div style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{fmt(Number(u.leads || 0))} / {fmt(u.lead_limit)}</div>
+                        <div style={{ color: expired ? "#e0342f" : "#6b7280", whiteSpace: "nowrap" }}>{u.valid_until ? new Date(u.valid_until).toLocaleDateString("ru-RU") : "—"}</div>
+                        <div style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{new Date(u.created_at).toLocaleDateString("ru-RU")}</div>
+                        <div onClick={() => setEditUser(u)} style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 500, color: "#28559c", textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "6px 0" }}>Изменить</div>
                       </div>
-                      <div style={{ whiteSpace: "nowrap" }}>{c.plan}</div>
-                      <div style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{c.usage}</div>
-                      <div style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{c.paidTill}</div>
-                      <div style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{c.since}</div>
-                      <div style={{ fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, whiteSpace: "nowrap", textAlign: "center", background: c.stBg, color: c.stColor }}>{c.status}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </div>
         )}
+
+        {tab === "settings" && <SettingsSection />}
 
         {tab === "plans" && (
           <div>
@@ -232,6 +233,94 @@ export function AdminApp() {
             </div>
           </div>
         )}
+      </div>
+      {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); loadUsers(); }} />}
+    </div>
+  );
+}
+
+/* ── Изменение тарифа/лимита/срока пользователя ─────────── */
+function EditUserModal({ user, onClose, onSaved }: { user: AdminUser; onClose: () => void; onSaved: () => void }) {
+  const [plan, setPlan] = useState(user.plan);
+  const [leadLimit, setLeadLimit] = useState(String(user.lead_limit));
+  const [validUntil, setValidUntil] = useState(user.valid_until ? user.valid_until.slice(0, 10) : "");
+  const [role, setRole] = useState(user.role);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      await api.adminUpdateUser(user.id, { plan, leadLimit: Number(leadLimit) || 0, validUntil: validUntil || null, role });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Ошибка"); setBusy(false); }
+  };
+
+  const lbl: CSSProperties = { fontSize: 12, color: "#6b7280", marginBottom: 5, display: "block" };
+  const field: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 13.5, fontFamily: "inherit", outlineColor: "#28559c" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, padding: 26, width: 420, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" }}>
+        <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 2 }}>Пользователь</div>
+        <div style={{ fontSize: 12.5, color: "#9ca3af", marginBottom: 18 }}>{user.email}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div><label style={lbl}>Тариф</label>
+            <select value={plan} onChange={(e) => setPlan(e.target.value)} style={{ ...field, cursor: "pointer" }}>
+              {["free", "start", "pro", "biz"].map((p) => <option key={p} value={p}>{PLAN_NAMES[p]}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Лимит заявок</label><input type="number" value={leadLimit} onChange={(e) => setLeadLimit(e.target.value)} style={field} /></div>
+          <div><label style={lbl}>Действует до (пусто = бессрочно)</label><input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} style={field} /></div>
+          <div><label style={lbl}>Роль</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...field, cursor: "pointer" }}>
+              <option value="user">Пользователь</option><option value="admin">Администратор</option>
+            </select>
+          </div>
+          {err && <div style={{ color: "#b91c1c", fontSize: 12.5 }}>{err}</div>}
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <div onClick={onClose} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 10, padding: "11px 0", fontSize: 13.5, fontWeight: 500, cursor: "pointer" }}>Отмена</div>
+            <div onClick={busy ? undefined : save} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#fff", borderRadius: 10, padding: "11px 0", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? "Сохраняем…" : "Сохранить"}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Настройки сайта: аналитика и верификация ───────────── */
+function SettingsSection() {
+  const [s, setS] = useState<SiteSettings>({});
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.adminSettings().then(({ settings }) => setS(settings)).catch(() => {}).finally(() => setLoading(false)); }, []);
+
+  const upd = (k: keyof SiteSettings, v: string) => { setS((p) => ({ ...p, [k]: v })); setSaved(false); };
+  const save = async () => { setBusy(true); try { const { settings } = await api.adminSaveSettings(s); setS(settings); setSaved(true); } catch { /* ignore */ } finally { setBusy(false); } };
+
+  const lbl: CSSProperties = { fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 6, display: "block" };
+  const hint: CSSProperties = { fontSize: 11.5, color: "#9ca3af", marginTop: 5, lineHeight: 1.5 };
+  const field: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 13px", fontSize: 13.5, fontFamily: "inherit", outlineColor: "#28559c" };
+
+  if (loading) return <div style={{ color: "#9ca3af", fontSize: 13 }}>Загрузка…</div>;
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+        <div><h1 style={h1}>Настройки сайта</h1><div style={sub}>Аналитика и верификация — применяются ко всему сайту</div></div>
+        <div onClick={busy ? undefined : save} style={{ cursor: "pointer", background: saved ? "#166534" : "#28559c", color: "#fff", fontSize: 13, fontWeight: 500, borderRadius: 9999, padding: "10px 22px", opacity: busy ? 0.6 : 1 }}>{busy ? "Сохраняем…" : saved ? "✓ Сохранено" : "Сохранить"}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, maxWidth: 900 }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Аналитика</div>
+          <div><label style={lbl}>ID счётчика Яндекс.Метрики</label><input value={s.metrikaId || ""} onChange={(e) => upd("metrikaId", e.target.value)} placeholder="12345678" style={field} /><div style={hint}>Только номер счётчика. Подключается после согласия на cookie.</div></div>
+          <div><label style={lbl}>Google Analytics (Measurement ID)</label><input value={s.gaId || ""} onChange={(e) => upd("gaId", e.target.value)} placeholder="G-XXXXXXXXXX" style={field} /><div style={hint}>Идентификатор вида G-XXXX. Подключается после согласия на cookie.</div></div>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Верификация сайта</div>
+          <div><label style={lbl}>Яндекс.Вебмастер (мета-тег)</label><input value={s.yandexVerify || ""} onChange={(e) => upd("yandexVerify", e.target.value)} placeholder="содержимое content=… из yandex-verification" style={field} /><div style={hint}>Вставьте значение content мета-тега yandex-verification.</div></div>
+          <div><label style={lbl}>Google Search Console (мета-тег)</label><input value={s.googleVerify || ""} onChange={(e) => upd("googleVerify", e.target.value)} placeholder="содержимое content=… из google-site-verification" style={field} /><div style={hint}>Вставьте значение content мета-тега google-site-verification.</div></div>
+        </div>
       </div>
     </div>
   );
