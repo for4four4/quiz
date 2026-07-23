@@ -225,7 +225,7 @@
     var v = row === 0 ? "top:20px;" : row === 1 ? "top:50%;transform:translateY(-50%);" : "bottom:20px;";
     var h = col === 0 ? "left:20px;" : col === 1 ? "left:50%;" + (row === 1 ? "" : "transform:translateX(-50%);") : "right:20px;";
     if (col === 1 && row === 1) v = "top:50%;left:50%;transform:translate(-50%,-50%);";
-    return base + v + h + "width:" + b.width + "px;height:" + b.height + "px;border-radius:" + b.radius + "px;padding:0 20px;box-sizing:border-box;";
+    return base + v + h + "width:" + b.width + "px;max-width:calc(100vw - 24px);height:" + b.height + "px;border-radius:" + b.radius + "px;padding:0 20px;box-sizing:border-box;";
   }
   // Фон-слайдер кнопки: несколько картинок с авто-пролистыванием.
   function makeBtnBg(imgs, b) {

@@ -30,7 +30,27 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
 
   const sessionRef = useRef("");
   const trackedRef = useRef<Set<string>>(new Set());
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [freeScale, setFreeScale] = useState(1);
   useEffect(() => { sessionRef.current = Math.random().toString(36).slice(2) + Date.now().toString(36); }, []);
+
+  // Свободное размещение свёрстано под ширину окна из редактора. На узком
+  // экране масштабируем весь слой блоков, чтобы не было переполнения.
+  useEffect(() => {
+    const c = withCard(doc);
+    const isFree = steps[i]?.layout === "free";
+    const el = cardRef.current;
+    if (!isFree || !el) { setFreeScale(1); return; }
+    const contentW = c.width - c.padX * 2;
+    const measure = () => {
+      const avail = el.clientWidth - c.padX * 2;
+      setFreeScale(contentW > 0 ? Math.min(1, avail / contentW) : 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [i, doc, steps]);
 
   // Индекс текущего шага среди вопросов (для воронки)
   const questionIndex = useMemo(() => {
@@ -157,6 +177,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   const free = step.layout === "free";
   const stageH = free ? Math.max(240, card.minHeight || 480) : undefined;
   const contentH = stageH ? stageH - card.padY * 2 : undefined;
+  const contentW = card.width - card.padX * 2;
 
   const progress = Math.round((i / Math.max(1, steps.length - 1)) * 100);
 
@@ -169,7 +190,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
   return (
     <main style={{ ...pageStyle, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
       {settings.discount?.enabled && !done && <DiscountBar discount={settings.discount} slug={quiz.slug} />}
-      <div style={{ ...cardStyleDyn, ...cardBg }}>
+      <div ref={cardRef} style={{ ...cardStyleDyn, ...cardBg }}>
         {settings.display.progressOn && (
           <div style={barStyle}><div style={{ ...fillStyle, width: `${progress}%`, background: progressColor }} /></div>
         )}
@@ -182,16 +203,20 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
             {!!settings.thanks?.redirectUrl && <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>Сейчас перенаправим…</p>}
           </div>
         ) : (
-          <div key={i} style={{ animation: slideKf ? `${slideKf} .42s cubic-bezier(.2,.8,.3,1)` : undefined, position: free ? "relative" : undefined, height: free ? contentH : undefined }}>
-            {step.blocks.map((b, idx) => {
-              const view = <BlockView block={b} accent={accent} free={free} contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />;
-              if (!free) return <div key={b.id}>{view}</div>;
-              const p = b.pos || { x: 0, y: idx * 70, w: card.width - card.padX * 2 };
-              // Медиа заполняет контейнер по высоте — берём заданную высоту,
-              // если ресайзом не задан pos.h (иначе картинка вылезет за рамку).
-              const isMedia = b.type === "image" || b.type === "slider";
-              const wrapH = p.h ?? (isMedia ? (b.style.height || 160) : undefined);
-              return <div key={b.id} style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: wrapH }}>{view}</div>;
+          <div key={i} style={{ animation: slideKf ? `${slideKf} .42s cubic-bezier(.2,.8,.3,1)` : undefined, position: free ? "relative" : undefined, height: free ? (contentH || 0) * freeScale : undefined }}>
+            {free ? (
+              <div style={{ position: "absolute", top: 0, left: 0, width: contentW, height: contentH, transform: freeScale !== 1 ? `scale(${freeScale})` : undefined, transformOrigin: "top left" }}>
+                {step.blocks.map((b, idx) => {
+                  const view = <BlockView block={b} accent={accent} free contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />;
+                  const p = b.pos || { x: 0, y: idx * 70, w: contentW };
+                  const isMedia = b.type === "image" || b.type === "slider";
+                  const wrapH = p.h ?? (isMedia ? (b.style.height || 160) : undefined);
+                  return <div key={b.id} style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: wrapH }}>{view}</div>;
+                })}
+              </div>
+            ) : step.blocks.map((b) => {
+              const view = <BlockView block={b} accent={accent} free={false} contact={contact} setContact={setContact} onPick={pickOption} onButton={() => (step.kind === "contact" ? submit(b.goal) : (fireGoal(b.goal), advance()))} sending={sending} />;
+              return <div key={b.id}>{view}</div>;
             })}
             {step.kind === "contact" && (
               <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: "#6b7280", lineHeight: 1.45, marginTop: 12, cursor: "pointer" }}>
@@ -318,7 +343,7 @@ function DiscountBar({ discount, slug }: { discount: NonNullable<QuizDoc["settin
   const mm = String(Math.floor(left / 60)).padStart(2, "0");
   const ss = String(left % 60).padStart(2, "0");
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, background: d.bg, color: d.color, borderRadius: 12, padding: "10px 16px", fontSize: 14, fontWeight: 600, boxShadow: "0 8px 24px rgba(15,31,60,0.18)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: d.bg, color: d.color, borderRadius: 12, padding: "10px 16px", fontSize: 14, fontWeight: 600, boxShadow: "0 8px 24px rgba(15,31,60,0.18)", maxWidth: "100%", boxSizing: "border-box", flexWrap: "wrap", justifyContent: "center" }}>
       <span>{d.text}</span>
       <span style={{ fontVariantNumeric: "tabular-nums", background: "rgba(255,255,255,0.18)", borderRadius: 8, padding: "4px 9px", letterSpacing: 0.5 }}>{mm}:{ss}</span>
     </div>

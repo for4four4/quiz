@@ -270,6 +270,8 @@ button,
    ============================================================ */
 @media (max-width: 960px) {
   .qv-nav-links { display: none !important; }
+  .qv-nav-cta { display: none !important; }
+  .qv-burger { display: flex !important; }
 }
 @media (max-width: 1260px) {
   .qv-promo { display: none !important; }

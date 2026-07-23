@@ -65,10 +65,20 @@ export function AdminApp() {
   const totalLeads = users.reduce((s, u) => s + Number(u.leads || 0), 0);
   const totalQuizzes = users.reduce((s, u) => s + Number(u.quizzes || 0), 0);
 
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#EFEFEF", color: "#111827" }}>
+    <div className="kc-shell" style={{ display: "flex", minHeight: "100vh", background: "#EFEFEF", color: "#111827" }}>
+      {/* Мобильный топбар с бургером (виден ≤640px) */}
+      <div className="kc-topbar" style={{ display: "none", alignItems: "center", gap: 12, padding: "12px 16px", background: "#0F1F3C", color: "#fff", position: "sticky", top: 0, zIndex: 50 }}>
+        <button aria-label="Меню" onClick={() => setMenuOpen(true)} style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+        </button>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Админ-панель</span>
+      </div>
+      {menuOpen && <div className="kc-scrim" onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 65, display: "none" }} />}
       {/* Sidebar */}
-      <div style={{ width: 248, flexShrink: 0, background: "#0F1F3C", color: "#ffffff", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", boxSizing: "border-box" }}>
+      <div className={"kc-side" + (menuOpen ? " kc-open" : "")} style={{ width: 248, flexShrink: 0, background: "#0F1F3C", color: "#ffffff", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", boxSizing: "border-box" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "20px 20px 16px" }}>
           <div style={{ width: 36, height: 36, borderRadius: 9999, background: "#28559c", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="3.2" rx="1.6" fill="#fff" opacity="0.55" /><rect x="2" y="8.4" width="16" height="3.2" rx="1.6" fill="#fff" opacity="0.8" /><rect x="2" y="13.8" width="9" height="3.2" rx="1.6" fill="#fff" /><path d="M13.5 15.4l1.6 1.6 3-3.4" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
@@ -82,21 +92,21 @@ export function AdminApp() {
           {navDef.map((n) => {
             const active = tab === n.id;
             return (
-              <div key={n.id} onClick={() => setTab(n.id)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 12, fontSize: 13.5, fontWeight: 500, cursor: "pointer", background: active ? "rgba(255,255,255,0.12)" : "transparent", color: active ? "#ffffff" : "rgba(255,255,255,0.6)", transition: "background .2s" }}>
-                <span style={{ display: "flex", width: 18, height: 18, alignItems: "center", justifyContent: "center" }}><Icon paths={n.paths} /></span>
-                <span>{n.label}</span>
-                {n.badge && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, background: "#e0342f", color: "#ffffff", borderRadius: 9999, padding: "2px 8px" }}>{n.badge}</span>}
+              <div key={n.id} className="kc-navitem" onClick={() => { setTab(n.id); setMenuOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 12, fontSize: 13.5, fontWeight: 500, cursor: "pointer", background: active ? "rgba(255,255,255,0.12)" : "transparent", color: active ? "#ffffff" : "rgba(255,255,255,0.6)", transition: "background .2s" }}>
+                <span style={{ display: "flex", width: 18, height: 18, alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon paths={n.paths} /></span>
+                <span className="kc-label">{n.label}</span>
+                {n.badge && <span className="kc-label" style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, background: "#e0342f", color: "#ffffff", borderRadius: 9999, padding: "2px 8px" }}>{n.badge}</span>}
               </div>
             );
           })}
         </div>
         <div style={{ marginTop: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
           <Link href={routes.home} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "rgba(255,255,255,0.55)", padding: "0 6px" }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>На сайт
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg><span className="kc-label">На сайт</span>
           </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 4px" }}>
-            <div style={{ width: 32, height: 32, borderRadius: 9999, background: "#28559c", color: "#ffffff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>ВЛ</div>
-            <div style={{ minWidth: 0 }}>
+          <div className="kc-profile" style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 4px" }}>
+            <div style={{ width: 32, height: 32, borderRadius: 9999, background: "#28559c", color: "#ffffff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>ВЛ</div>
+            <div className="kc-label" style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>Владелец</div>
               <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.45)" }}>admin@qvalify.ru</div>
             </div>
@@ -105,7 +115,7 @@ export function AdminApp() {
       </div>
 
       {/* Main */}
-      <div style={{ flex: 1, minWidth: 0, padding: "28px 32px", boxSizing: "border-box" }}>
+      <div className="kc-main" style={{ flex: 1, minWidth: 0, padding: "28px 32px", boxSizing: "border-box" }}>
         {tab === "clients" && (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>

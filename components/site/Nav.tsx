@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
 import { RollLink } from "./primitives";
+import { NavMobile } from "./NavMobile";
 import { MoscowClock } from "../util/MoscowClock";
 import { navLinks, routes } from "@/lib/nav";
 
@@ -120,6 +121,7 @@ export function Nav({
               <MoscowClock />
             </div>
           )}
+          <div className="qv-nav-cta" style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <RollLink href={routes.vhod} style={{ height: 20 }}>
             Войти
           </RollLink>
@@ -173,6 +175,8 @@ export function Nav({
               </svg>
             </span>
           </Link>
+          </div>
+          <NavMobile active={active} />
         </div>
       </div>
     </div>
