@@ -37,9 +37,12 @@ export function Section({ title, children }: { title: string; children: ReactNod
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div><div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 5 }}>{label}</div>{children}</div>;
 }
-/** Ползунок + ручной ввод числа (можно вписать значение с клавиатуры). */
-export function Slider({ label, v, min, max, unit, onChange }: { label: string; v: number; min: number; max: number; unit: string; onChange: (v: number) => void }) {
-  const clamp = (n: number) => Math.max(min, Math.min(max, Math.round(n)));
+/** Ползунок + ручной ввод числа. Ползунок ходит в диапазоне min..max,
+ *  а с клавиатуры можно вписать значение вплоть до absMax (крупнее диапазона). */
+export function Slider({ label, v, min, max, unit, onChange, absMax, absMin }: { label: string; v: number; min: number; max: number; unit: string; onChange: (v: number) => void; absMax?: number; absMin?: number }) {
+  const lo = absMin ?? min;
+  const hi = absMax ?? max;
+  const clamp = (n: number) => Math.max(lo, Math.min(hi, Math.round(n)));
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: "#6b7280", marginBottom: 4 }}>
@@ -48,15 +51,16 @@ export function Slider({ label, v, min, max, unit, onChange }: { label: string; 
           <input
             type="number"
             value={v}
-            min={min}
-            max={max}
+            min={lo}
+            max={hi}
             onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) onChange(clamp(n)); }}
-            style={{ width: 52, boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 7, padding: "3px 6px", fontSize: 12, fontWeight: 600, color: "#111827", textAlign: "right", fontFamily: "inherit", outlineColor: "#28559c" }}
+            style={{ width: 56, boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 7, padding: "3px 6px", fontSize: 12, fontWeight: 600, color: "#111827", textAlign: "right", fontFamily: "inherit", outlineColor: "#28559c" }}
           />
           <span style={{ fontSize: 11, color: "#9ca3af" }}>{unit}</span>
         </span>
       </div>
-      <input type="range" min={min} max={max} value={v} onChange={(e) => onChange(+e.target.value)} style={{ width: "100%", accentColor: "#28559c" }} />
+      {/* Ползунок ограничен видимым диапазоном; введённое вручную большее значение остаётся */}
+      <input type="range" min={min} max={max} value={Math.min(max, v)} onChange={(e) => onChange(+e.target.value)} style={{ width: "100%", accentColor: "#28559c" }} />
     </div>
   );
 }

@@ -635,15 +635,15 @@ function BlockInspector({ block, setStyle, setField, branchSteps, onDelete, onDu
           {(block.type === "heading" || block.type === "text" || block.type === "button" || block.type === "options" || block.type === "input") && (
             <Field label="Насыщенность"><Select value={String(s.fontWeight)} onChange={(v) => setStyle("fontWeight", Number(v))} options={[["400", "Обычный"], ["500", "Средний"], ["600", "Полужирный"], ["700", "Жирный"]]} /></Field>
           )}
-          {(block.type === "image" || block.type === "button" || block.type === "slider") && <Slider label="Высота" v={s.height} min={0} max={400} unit="px" onChange={(v) => setStyle("height", v)} />}
+          {(block.type === "image" || block.type === "button" || block.type === "slider") && <Slider label="Высота" v={s.height} min={0} max={600} absMax={2000} unit="px" onChange={(v) => setStyle("height", v)} />}
           {block.type !== "image" && block.type !== "html" && <ColorRow label="Цвет текста" value={s.color} onChange={(v) => setStyle("color", v)} />}
           <ColorRow label="Фон блока" value={s.bg === "transparent" ? "#ffffff" : s.bg} onChange={(v) => setStyle("bg", v)} extra={<span onClick={() => setStyle("bg", "transparent")} style={{ fontSize: 11, color: s.bg === "transparent" ? "#28559c" : "#9ca3af", cursor: "pointer" }}>прозрачный</span>} />
-          <Slider label="Толщина рамки" v={s.borderWidth} min={0} max={8} unit="px" onChange={(v) => setStyle("borderWidth", v)} />
+          <Slider label="Толщина рамки" v={s.borderWidth} min={0} max={40} absMax={200} unit="px" onChange={(v) => setStyle("borderWidth", v)} />
           <ColorRow label="Цвет рамки" value={s.borderColor} onChange={(v) => setStyle("borderColor", v)} />
-          <Slider label="Скругление" v={s.radius} min={0} max={40} unit="px" onChange={(v) => setStyle("radius", v)} />
-          <Slider label="Отступ ↕" v={s.padY} min={0} max={48} unit="px" onChange={(v) => setStyle("padY", v)} />
-          <Slider label="Отступ ↔" v={s.padX} min={0} max={48} unit="px" onChange={(v) => setStyle("padX", v)} />
-          <Slider label="Сверху" v={s.marginTop} min={0} max={60} unit="px" onChange={(v) => setStyle("marginTop", v)} />
+          <Slider label="Скругление" v={s.radius} min={0} max={80} absMax={400} unit="px" onChange={(v) => setStyle("radius", v)} />
+          <Slider label="Отступ ↕" v={s.padY} min={0} max={120} absMax={400} unit="px" onChange={(v) => setStyle("padY", v)} />
+          <Slider label="Отступ ↔" v={s.padX} min={0} max={120} absMax={400} unit="px" onChange={(v) => setStyle("padX", v)} />
+          <Slider label="Сверху" v={s.marginTop} min={0} max={120} absMax={400} unit="px" onChange={(v) => setStyle("marginTop", v)} />
           <Field label="Шрифт"><Select value={s.font} onChange={(v) => setStyle("font", v)} options={FONT_LABELS} /></Field>
         </div>
       )}
@@ -738,11 +738,11 @@ function StepInspector({ step, theme, card, setStepField, setStepBg, setTheme, s
       {tab === "window" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>Размер окна общий для всех шагов. Можно также тянуть окно за правый/нижний край прямо на холсте.</div>
-          <Slider label="Ширина окна" v={card.width} min={300} max={760} unit="px" onChange={(v) => setCard({ width: v })} />
-          <Slider label="Мин. высота" v={card.minHeight} min={0} max={720} unit="px" onChange={(v) => setCard({ minHeight: v })} />
-          <Slider label="Отступ ↔" v={card.padX} min={0} max={64} unit="px" onChange={(v) => setCard({ padX: v })} />
-          <Slider label="Отступ ↕" v={card.padY} min={0} max={64} unit="px" onChange={(v) => setCard({ padY: v })} />
-          <Slider label="Скругление окна" v={card.radius} min={0} max={40} unit="px" onChange={(v) => setCard({ radius: v })} />
+          <Slider label="Ширина окна" v={card.width} min={300} max={1000} absMax={2400} unit="px" onChange={(v) => setCard({ width: v })} />
+          <Slider label="Мин. высота" v={card.minHeight} min={0} max={1200} absMax={4000} unit="px" onChange={(v) => setCard({ minHeight: v })} />
+          <Slider label="Отступ ↔" v={card.padX} min={0} max={160} absMax={600} unit="px" onChange={(v) => setCard({ padX: v })} />
+          <Slider label="Отступ ↕" v={card.padY} min={0} max={160} absMax={600} unit="px" onChange={(v) => setCard({ padY: v })} />
+          <Slider label="Скругление окна" v={card.radius} min={0} max={80} absMax={400} unit="px" onChange={(v) => setCard({ radius: v })} />
           <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
             <ColorRow label="Акцентный цвет квиза" value={theme.accent} onChange={(v) => setTheme({ accent: v })} />
             <Field label="Шрифт по умолчанию"><Select value={theme.font} onChange={(v) => setTheme({ font: v })} options={FONT_LABELS} /></Field>

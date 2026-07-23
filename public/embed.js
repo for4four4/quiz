@@ -21,7 +21,7 @@
   var ANIM = { none: "", fade: "qvAFade", slideL: "qvASlideL", slideUp: "qvASlideUp", zoom: "qvAZoom", flip: "qvAFlip" };
   var DEF = {
     slideAnim: "slideUp", openAnim: "zoom",
-    button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: "#28559c", color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
+    button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: "#28559c", bgImages: [], bgSlide: true, bgSlideSec: 3, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
     display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", popupImages: [], position: "center", progressOn: true, progressStyle: "line", progressColor: "#28559c" }
   };
 
@@ -204,9 +204,12 @@
     render(box, quiz, cfg);
   }
 
+  function btnImages(b) {
+    if (b.bgImages && b.bgImages.length) return b.bgImages;
+    return b.bgImage ? [b.bgImage] : [];
+  }
   function buttonStyle(b) {
-    var bg = b.bgImage ? "url(" + b.bgImage + ") center/cover, " + b.bg : b.bg;
-    var base = "position:fixed;z-index:99998;border:none;cursor:pointer;font-family:-apple-system,Segoe UI,Arial,sans-serif;color:" + b.color + ";background:" + bg + ";box-shadow:0 8px 28px rgba(40,85,156,.4);display:flex;align-items:center;justify-content:center;gap:10px;";
+    var base = "position:fixed;z-index:99998;border:none;cursor:pointer;overflow:hidden;font-family:-apple-system,Segoe UI,Arial,sans-serif;color:" + b.color + ";background:" + b.bg + ";box-shadow:0 8px 28px rgba(40,85,156,.4);display:flex;align-items:center;justify-content:center;gap:10px;";
     if (b.fullscreen) return base + "left:0;right:0;bottom:0;height:" + b.height + "px;border-radius:0;";
     var row = Math.floor(b.position / 3), col = b.position % 3;
     var v = row === 0 ? "top:20px;" : row === 1 ? "top:50%;transform:translateY(-50%);" : "bottom:20px;";
@@ -214,19 +217,36 @@
     if (col === 1 && row === 1) v = "top:50%;left:50%;transform:translate(-50%,-50%);";
     return base + v + h + "width:" + b.width + "px;height:" + b.height + "px;border-radius:" + b.radius + "px;padding:0 20px;box-sizing:border-box;";
   }
+  // Фон-слайдер кнопки: несколько картинок с авто-пролистыванием.
+  function makeBtnBg(imgs, b) {
+    var wrap = el("div", "position:absolute;inset:0;z-index:0;overflow:hidden;");
+    var els = imgs.map(function (src, k) {
+      return el("div", "position:absolute;inset:0;background:url(" + src + ") center/cover;opacity:" + (k === 0 ? 1 : 0) + ";transition:opacity .6s ease;");
+    });
+    els.forEach(function (e) { wrap.appendChild(e); });
+    if ((b.bgSlide == null || b.bgSlide) && imgs.length > 1) {
+      var i = 0;
+      setInterval(function () { els[i].style.opacity = 0; i = (i + 1) % imgs.length; els[i].style.opacity = 1; }, Math.max(1, b.bgSlideSec || 3) * 1000);
+    }
+    return wrap;
+  }
 
   function makeButton(quiz, cfg) {
     var b = cfg.button;
     var btn = el("button", buttonStyle(b));
+    var imgs = btnImages(b);
+    if (imgs.length) btn.appendChild(makeBtnBg(imgs, b));
+    var shadow = imgs.length ? "text-shadow:0 1px 4px rgba(0,0,0,.45);" : "";
     if (b.icon) {
       var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("width", "17"); svg.setAttribute("height", "17"); svg.setAttribute("viewBox", "0 0 20 20");
+      svg.setAttribute("style", "position:relative;z-index:1;");
       svg.innerHTML = '<rect x="2" y="3" width="16" height="3.2" rx="1.6" fill="currentColor" opacity="0.5"/><rect x="2" y="8.4" width="16" height="3.2" rx="1.6" fill="currentColor" opacity="0.75"/><rect x="2" y="13.8" width="9" height="3.2" rx="1.6" fill="currentColor"/>';
       btn.appendChild(svg);
     }
-    var lbl = el("span", "min-width:0;text-align:left;");
+    var lbl = el("span", "min-width:0;text-align:left;position:relative;z-index:1;" + shadow);
     lbl.appendChild(el("span", "display:block;font-size:14px;font-weight:600;white-space:nowrap;", b.text));
-    if (b.showSub) lbl.appendChild(el("span", "display:block;font-size:11px;opacity:.75;white-space:nowrap;", b.sub));
+    if (b.showSub) lbl.appendChild(el("span", "display:block;font-size:11px;opacity:.85;white-space:nowrap;", b.sub));
     btn.appendChild(lbl);
     btn.onclick = function () { openPopup(quiz, cfg); };
     document.body.appendChild(btn);

@@ -66,7 +66,10 @@ export type QuizButton = {
   sub: string;
   showSub: boolean;
   bg: string;
-  bgImage?: string;     // картинка-фон кнопки (загруженный файл)
+  bgImage?: string;     // одна картинка-фон кнопки (совместимость)
+  bgImages?: string[];  // несколько картинок-фонов → слайдер
+  bgSlide?: boolean;    // авто-пролистывание слайдера фона
+  bgSlideSec?: number;  // интервал авто-пролистывания, сек
   color: string;
   width: number;
   height: number;
@@ -160,7 +163,7 @@ export function defaultSettings(accent = "#28559c"): QuizSettings {
   return {
     slideAnim: "slideUp",
     openAnim: "zoom",
-    button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: accent, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
+    button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: accent, bgImages: [], bgSlide: true, bgSlideSec: 3, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
     display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", popupImages: [], position: "center", progressOn: true, progressStyle: "line", progressColor: accent },
     thanks: defaultThanks(),
     discount: defaultDiscount(),
