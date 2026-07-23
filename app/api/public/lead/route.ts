@@ -4,6 +4,7 @@ import { scoreLead, type Answer } from "@/lib/server/scoring";
 import { summarizeLead } from "@/lib/server/prompts";
 import { dispatchLead } from "@/lib/server/integrations";
 import { env } from "@/lib/server/env";
+import { rateLimit } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,13 +44,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Нужны slug и телефон" }, { status: 400, headers: cors });
     }
 
+    // Анти-спам/анти-DoS (аудит H3): защищает БД, платный LLM и рассылки в CRM.
+    const ip = clientIp(req);
+    const perIp = rateLimit(`lead:ip:${ip}`, 10, 60_000);
+    const perSlug = rateLimit(`lead:slug:${b.slug}`, 80, 60_000);
+    if (!perIp.ok || !perSlug.ok) {
+      return NextResponse.json({ error: "Слишком часто, попробуйте позже" }, { status: 429, headers: cors });
+    }
+
     const [quiz] = await query<{ id: number; user_id: number; name: string; design: { integrations?: Record<string, { enabled?: boolean; config?: Record<string, string> }> } | null }>(
       "SELECT id,user_id,name,design FROM quizzes WHERE slug=$1 AND status='active'",
       [b.slug]
     );
     if (!quiz) return NextResponse.json({ error: "Квиз не найден" }, { status: 404, headers: cors });
 
-    const ip = clientIp(req);
     const utm = b.utm && typeof b.utm === "object" ? b.utm : {};
 
     // Защита от фрода: чёрный список IP + защита от дублей (настройки владельца)

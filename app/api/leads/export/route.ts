@@ -16,7 +16,9 @@ const HEAT: Record<string, string> = { hot: "Горячий", warm: "Тёплы�
 const STATUS: Record<string, string> = { new: "Новая", work: "В работе", done: "Успешная", rejected: "Отказ" };
 
 function esc(v: string): string {
-  const s = (v ?? "").toString();
+  let s = (v ?? "").toString();
+  // Анти-CSV-инъекция (аудит M4): нейтрализуем формулы Excel/Sheets
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

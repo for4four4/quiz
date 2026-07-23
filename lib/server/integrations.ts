@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import nodemailer from "nodemailer";
 import { env } from "./env";
+import { assertSafeUrl } from "./net";
 
 export type LeadPayload = {
   quizName: string;
@@ -62,6 +63,7 @@ async function sendMax(chatId: string, l: LeadPayload) {
 }
 
 async function sendWebhook(url: string, secret: string | undefined, l: LeadPayload) {
+  await assertSafeUrl(url); // SSRF-защита (аудит H2)
   const body = JSON.stringify(l);
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (secret) headers["X-Qvalify-Signature"] = createHmac("sha256", secret).update(body).digest("hex");
@@ -109,6 +111,7 @@ async function sendBitrix24(webhookUrl: string, l: LeadPayload) {
     OPPORTUNITY: l.score,
   };
   if (l.email) fields.EMAIL = [{ VALUE: l.email, VALUE_TYPE: "WORK" }];
+  await assertSafeUrl(base + "crm.lead.add.json"); // SSRF-защита (аудит H2)
   await fetch(base + "crm.lead.add.json", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -137,6 +140,7 @@ async function sendAmocrm(domain: string, token: string, l: LeadPayload) {
       },
     },
   ];
+  await assertSafeUrl(`https://${host}/api/v4/leads/complex`); // SSRF-защита (аудит H2)
   await fetch(`https://${host}/api/v4/leads/complex`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },

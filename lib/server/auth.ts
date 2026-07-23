@@ -46,3 +46,24 @@ export async function requireSession(): Promise<Session> {
   if (!s) throw new Response("Не авторизован", { status: 401 });
   return s;
 }
+
+/** Админ, если почта в ADMIN_EMAILS или в БД role='admin'. */
+export async function isAdmin(s: Session | null): Promise<boolean> {
+  if (!s) return false;
+  if (env.adminEmails.includes((s.email || "").toLowerCase())) return true;
+  try {
+    const { query } = await import("./db");
+    const [u] = await query<{ role: string | null }>("SELECT role FROM users WHERE id=$1", [s.uid]);
+    return u?.role === "admin";
+  } catch {
+    return false;
+  }
+}
+
+/** Для /api/admin/* — бросает 401/403, если не админ. */
+export async function requireAdmin(): Promise<Session> {
+  const s = await getSession();
+  if (!s) throw new Response("Не авторизован", { status: 401 });
+  if (!(await isAdmin(s))) throw new Response("Доступ запрещён", { status: 403 });
+  return s;
+}

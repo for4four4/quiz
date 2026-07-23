@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.3",
     "jsonwebtoken": "^9.0.3",
     "next": "^15.1.6",
     "nodemailer": "^9.0.3",

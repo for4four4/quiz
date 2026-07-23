@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ensureSchema, query } from "@/lib/server/db";
 import { requireSession } from "@/lib/server/auth";
+import { isPublicHttpsUrl } from "@/lib/server/net";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,16 @@ export async function POST(req: Request) {
     };
     if (!kind || !KINDS.has(kind)) {
       return NextResponse.json({ error: "Неизвестная интеграция" }, { status: 400 });
+    }
+    // SSRF-защита (аудит H2): URL-поля должны быть публичным https
+    const cfg = config || {};
+    for (const key of ["url", "webhookUrl", "domain"]) {
+      const val = (cfg[key] || "").trim();
+      if (!val) continue;
+      const asUrl = key === "domain" && !/^https?:\/\//.test(val) ? `https://${val}` : val;
+      if (!isPublicHttpsUrl(asUrl)) {
+        return NextResponse.json({ error: `Недопустимый адрес в поле «${key}» (нужен публичный https)` }, { status: 400 });
+      }
     }
     const [row] = await query<IntegrationRow>(
       `INSERT INTO integrations (user_id,kind,config,enabled)

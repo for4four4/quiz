@@ -97,12 +97,10 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
     else if (step.kind === "contact") trackEvent("contact");
     fireGoal(step.goal);
     if (step.js && typeof window !== "undefined") {
-      try {
-        // Свой код владельца квиза (как «свой JS» в Tilda). Изолируем в функции.
-        new Function("step", "quiz", step.js)(i, { slug: quiz.slug, name: quiz.name });
-      } catch (e) {
-        console.error("Ошибка своего JS на шаге", e);
-      }
+      // Свой JS владельца квиза выполняем ТОЛЬКО в песочнице (sandboxed iframe
+      // без allow-same-origin): нет доступа к cookie/DOM нашего origin — защита
+      // посетителей от вредоносного кода тенанта (см. аудит C2).
+      runSandboxedJs(step.js, { step: i, quiz: { slug: quiz.slug, name: quiz.name } });
     }
   }, [i]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -241,7 +239,8 @@ function BlockView({ block, accent, free, contact, setContact, onPick, onButton,
     );
   }
   if (block.type === "html") {
-    return <div style={{ ...outer }}><div style={{ width: innerWidth }} dangerouslySetInnerHTML={{ __html: block.html || "" }} /></div>;
+    // Авторский HTML — только в песочнице (sandboxed iframe), не на нашем origin (аудит C1).
+    return <div style={{ ...outer }}><div style={{ width: innerWidth }}><SandboxHtml html={block.html || ""} height={s.height || (free ? "100%" : 160)} /></div></div>;
   }
   if (block.type === "button") {
     return (
@@ -316,6 +315,37 @@ function DiscountBar({ discount, slug }: { discount: NonNullable<QuizDoc["settin
       <span style={{ fontVariantNumeric: "tabular-nums", background: "rgba(255,255,255,0.18)", borderRadius: 8, padding: "4px 9px", letterSpacing: 0.5 }}>{mm}:{ss}</span>
     </div>
   );
+}
+
+// Безопасное исполнение авторского HTML: sandbox-iframe (null-origin), без доступа
+// к cookie/DOM платформы. allow-scripts даёт скриптам работать, но allow-same-origin
+// НЕ включаем — иначе песочница бесполезна.
+function SandboxHtml({ html, height }: { html: string; height: number | string }) {
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>html,body{margin:0;padding:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif}</style></head><body>${html}</body></html>`;
+  return (
+    <iframe
+      title="Пользовательский HTML"
+      sandbox="allow-scripts allow-popups allow-forms allow-popups-to-escape-sandbox"
+      srcDoc={doc}
+      style={{ width: "100%", height, border: "none", display: "block" }}
+    />
+  );
+}
+
+// Безопасное исполнение авторского JS: скрытый sandbox-iframe (null-origin).
+// Код тенанта не может читать cookie/DOM нашего origin (аудит C2).
+function runSandboxedJs(code: string, ctx: { step: number; quiz: { slug: string; name: string } }) {
+  try {
+    const ctxJson = JSON.stringify(ctx).replace(/</g, "\\u003c");
+    const body = `<!doctype html><html><body><script>(function(){try{var __c=${ctxJson};var step=__c.step;var quiz=__c.quiz;\n${code}\n}catch(e){}})();<\/script></body></html>`;
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:absolute;width:0;height:0;border:0;left:-9999px;visibility:hidden";
+    frame.srcdoc = body;
+    document.body.appendChild(frame);
+    setTimeout(() => { frame.remove(); }, 15000);
+  } catch { /* ignore */ }
 }
 
 // Скрытые поля: собираем UTM-метки, рекламные id и реферер (сквозная аналитика)

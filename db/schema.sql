@@ -58,6 +58,8 @@ ALTER TABLE leads   ADD COLUMN IF NOT EXISTS utm  JSONB NOT NULL DEFAULT '{}';  
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS domain TEXT;                        -- свой домен квиза (CNAME)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_domain ON quizzes(domain) WHERE domain IS NOT NULL AND domain <> '';
 ALTER TABLE users   ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'; -- защита: dedupeHours, ipBlacklist[]
+ALTER TABLE users   ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';    -- user | admin (доступ к /admin)
+ALTER TABLE users   ADD COLUMN IF NOT EXISTS valid_until DATE;                      -- срок действия тарифа
 
 -- События посетителей для воронки и аналитики шагов
 CREATE TABLE IF NOT EXISTS events (

@@ -6,6 +6,8 @@
 export const env = {
   jwtSecret: process.env.JWT_SECRET || "",
   publicOrigin: process.env.PUBLIC_ORIGIN || "https://qvalify.ru",
+  // Почты администраторов (через запятую) — доступ к /admin и /api/admin/*
+  adminEmails: (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
   uploadDir: process.env.UPLOAD_DIR || "/var/www/quiz/uploads",
   databaseUrl: process.env.DATABASE_URL || "",
 

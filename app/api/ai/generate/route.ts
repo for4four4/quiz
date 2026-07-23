@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/server/auth";
 import { generateQuiz, type GenerateInput } from "@/lib/server/prompts";
+import { rateLimit } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    await requireSession();
+    const s = await requireSession();
+    // Квота на платный LLM (аудит M5): не более 20 генераций в час на пользователя
+    const rl = rateLimit(`aigen:${s.uid}`, 20, 60 * 60_000);
+    if (!rl.ok) return NextResponse.json({ error: "Лимит генераций исчерпан, попробуйте позже" }, { status: 429 });
     const body = (await req.json()) as Partial<GenerateInput>;
     if (!body.business) return NextResponse.json({ error: "Опишите бизнес" }, { status: 400 });
 
