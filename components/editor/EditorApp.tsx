@@ -3,6 +3,7 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
+import { api } from "@/lib/api";
 
 type BlockId = "title" | "subtitle" | "benefits" | "button";
 type Mode = "slides" | "button" | "display";
@@ -90,6 +91,23 @@ export function EditorApp() {
     button: { metrika: true, call: true },
   });
   const [props, setProps] = useState<Record<BlockId, Prop>>(initialProps);
+
+  const [publishState, setPublishState] = useState<"idle" | "saving" | "done" | "error">("idle");
+
+  const publish = () => {
+    setPublishState("saving");
+    const design = {
+      button: { text: btnText, sub: btnSub, showSub, bg: btnBg, w: btnW, h: btnH, r: btnR, pos: btnPos, img: btnImg },
+      display: { dispType, trigger, delaySec, pageUrl, openAnim, slideAnim, dim, popupBg, progressOn, prStyle, prColor },
+      cover: { bgMode, bgColor, bgImage },
+    };
+    const steps = order.map((id) => ({ id, content: content[id], props: props[id] }));
+    api
+      .createQuiz({ name: "Подбор кухни", steps, design })
+      .then(() => setPublishState("done"))
+      .catch(() => setPublishState("error"));
+    setTimeout(() => setPublishState("idle"), 2600);
+  };
 
   const canvasEl = useRef<HTMLDivElement | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -189,7 +207,9 @@ export function EditorApp() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Предпросмотр</div>
-          <div style={{ background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "8px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Опубликовать</div>
+          <div onClick={publish} style={{ background: publishState === "error" ? "#991b1b" : "#28559c", color: "#ffffff", borderRadius: 9999, padding: "8px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer", transition: "background .2s" }}>
+            {publishState === "saving" ? "Публикуем…" : publishState === "done" ? "✓ Опубликовано" : publishState === "error" ? "Нужен вход" : "Опубликовать"}
+          </div>
         </div>
       </div>
 

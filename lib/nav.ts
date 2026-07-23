@@ -7,6 +7,8 @@ export const routes = {
   dokumenty: "/dokumenty",
   editor: "/editor",
   cabinet: "/cabinet",
+  admin: "/admin",
+  vhod: "/vhod",
 } as const;
 
 export const navLinks = [

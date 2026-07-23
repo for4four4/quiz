@@ -9,6 +9,7 @@ export const heat = {
 export type Lead = {
   id: number;
   col: number;
+  quizName?: string;
   name: string;
   phone: string;
   when: string;
@@ -58,14 +59,17 @@ export const funnel = [
   { label: "Оставили заявку", n: "334", w: "24%", op: 0.45 },
 ];
 
-export const quizzes = [
+export type QuizCard = { name: string; where: string; st: string; stBg: string; stColor: string; views: string; leads: string; cr: string };
+export type CrmQuiz = { name: string; new: number; work: number; done: number; hot: number; finish: string };
+
+export const quizzes: QuizCard[] = [
   { name: "Подбор кухни", where: "kuhni-spb.ru · встроен в блок", st: "Активен", stBg: "rgba(22,101,52,0.10)", stColor: "#166534", views: "2 940", leads: "52", cr: "7,1%" },
   { name: "Шкафы-купе", where: "kuhni-spb.ru · плавающая кнопка", st: "Активен", stBg: "rgba(22,101,52,0.10)", stColor: "#166534", views: "1 204", leads: "21", cr: "5,4%" },
   { name: "Ремонт под ключ", where: "Прямая ссылка · реклама VK", st: "Активен", stBg: "rgba(22,101,52,0.10)", stColor: "#166534", views: "668", leads: "13", cr: "4,9%" },
   { name: "Гардеробные", where: "Черновик · сгенерирован ИИ", st: "Черновик", stBg: "rgba(17,24,39,0.07)", stColor: "#6b7280", views: "—", leads: "—", cr: "—" },
 ];
 
-export const crmQuizzes = [
+export const crmQuizzes: CrmQuiz[] = [
   { name: "Подбор кухни", new: 8, work: 5, done: 3, hot: 4, finish: "24%" },
   { name: "Шкафы-купе", new: 3, work: 2, done: 1, hot: 1, finish: "18%" },
   { name: "Ремонт под ключ", new: 2, work: 1, done: 0, hot: 1, finish: "15%" },

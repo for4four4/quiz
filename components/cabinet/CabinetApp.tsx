@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
+import { api } from "@/lib/api";
 import {
   bars,
   columns,
@@ -15,7 +16,11 @@ import {
   kpis,
   navDef,
   quizzes,
+  type Lead,
+  type QuizCard,
+  type CrmQuiz,
 } from "./data";
+import type { ApiLead, ApiQuiz } from "@/lib/api";
 
 const SPARK = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#28559c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -81,9 +86,31 @@ export function CabinetApp() {
   const [aiCalc, setAiCalc] = useState(true);
   const [aiProgress, setAiProgress] = useState(0);
   const [aiStage, setAiStage] = useState("");
+  const [aiBusiness, setAiBusiness] = useState(
+    "Студия кухонь на заказ в Санкт-Петербурге. Средний чек 350 тысяч, срок изготовления 30 дней, бесплатный замер."
+  );
+  const [aiResultName, setAiResultName] = useState("Подбор кухни под ваш бюджет");
   const aiTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Живые данные (когда пользователь авторизован); иначе — демо-данные прототипа.
+  const [liveQuizzes, setLiveQuizzes] = useState<ApiQuiz[] | null>(null);
+  const [liveLeads, setLiveLeads] = useState<Lead[] | null>(null);
+
   useEffect(() => () => { if (aiTimer.current) clearInterval(aiTimer.current); }, []);
+
+  useEffect(() => {
+    let alive = true;
+    api.me().then((r) => {
+      if (!alive || !r.user) return;
+      api.quizzes().then((q) => alive && setLiveQuizzes(q.quizzes)).catch(() => {});
+      api.leads().then((l) => alive && setLiveLeads(mapLeads(l.leads))).catch(() => {});
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const goals = ["Заявки и лиды", "Расчёт стоимости", "Подбор товара", "Опрос клиентов"];
+  const bonuses = ["Скидка", "Подарок", "Консультация", "Без бонуса"];
+  const tones = ["Дружелюбный", "Деловой", "Экспертный"];
 
   const runAiFlow = () => {
     const stages = ["Изучаем нишу и аудиторию…", "Пишем вопросы и варианты…", "Собираем калькулятор и обложку…"];
@@ -92,15 +119,22 @@ export function CabinetApp() {
     setAiStage(stages[0]);
     let i = 0;
     aiTimer.current = setInterval(() => {
-      i++;
-      if (i >= 3) {
-        if (aiTimer.current) clearInterval(aiTimer.current);
-        setAiPhase("done");
-        return;
-      }
+      i = Math.min(i + 1, 2);
       setAiStage(stages[i]);
       setAiProgress(8 + i * 38);
     }, 1400);
+
+    // Реальная генерация через API; при неудаче (нет входа/ключа) — демо-результат.
+    const finish = () => { if (aiTimer.current) clearInterval(aiTimer.current); setAiProgress(100); setAiPhase("done"); };
+    api
+      .generate({ business: aiBusiness, goal: goals[aiGoal], questions: aiQn, bonus: bonuses[aiBonus], tone: tones[aiTone], calc: aiCalc })
+      .then((res) => {
+        const q = res.quiz as { name?: string } | undefined;
+        if (q?.name) setAiResultName(q.name);
+        return api.createQuiz({ name: q?.name || "Новый квиз", steps: (res.quiz as { steps?: unknown })?.steps || [] }).catch(() => {});
+      })
+      .catch(() => { /* остаёмся на демо-названии */ })
+      .finally(() => setTimeout(finish, 1200));
   };
   const closeAi = () => {
     if (aiTimer.current) clearInterval(aiTimer.current);
@@ -108,7 +142,12 @@ export function CabinetApp() {
     setAiPhase("idle");
   };
 
-  const ld = lead ? crmLeads.find((l) => l.id === lead) ?? null : null;
+  // Витрина данных: живые, если есть, иначе демо-данные прототипа.
+  const leadsData: Lead[] = liveLeads && liveLeads.length ? liveLeads : crmLeads;
+  const crmQuizList = liveLeads && liveLeads.length ? deriveCrmQuizzes(liveLeads) : crmQuizzes;
+  const quizCards = liveQuizzes && liveQuizzes.length ? liveQuizzes.map((q) => quizToCard(q, leadsData)) : quizzes;
+
+  const ld = lead ? leadsData.find((l) => l.id === lead) ?? null : null;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   return (
@@ -170,7 +209,7 @@ export function CabinetApp() {
             onRemove={(i) => setWidgets((w) => w.filter((_, j) => j !== i))}
           />
         )}
-        {tab === "quizzes" && <QuizzesSection onAi={() => { setAiOpen(true); setAiPhase("idle"); }} />}
+        {tab === "quizzes" && <QuizzesSection quizzes={quizCards} onAi={() => { setAiOpen(true); setAiPhase("idle"); }} />}
         {tab === "leads" && (
           <LeadsSection
             crmQuiz={crmQuiz}
@@ -178,6 +217,8 @@ export function CabinetApp() {
             crmTab={crmTab}
             setCrmTab={setCrmTab}
             openLead={(id) => { setLead(id); setLeadTab("overview"); }}
+            leads={leadsData}
+            crmQuizzes={crmQuizList}
           />
         )}
         {tab === "integ" && (
@@ -311,6 +352,7 @@ export function CabinetApp() {
             {aiPhase === "idle" && (
               <AiIdle
                 onClose={closeAi}
+                business={aiBusiness} setBusiness={setAiBusiness}
                 aiGoal={aiGoal} setAiGoal={setAiGoal}
                 aiBonus={aiBonus} setAiBonus={setAiBonus}
                 aiTone={aiTone} setAiTone={setAiTone}
@@ -332,7 +374,7 @@ export function CabinetApp() {
                 <div style={{ width: 52, height: 52, borderRadius: 9999, background: "rgba(22,101,52,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>Квиз «Подбор кухни под ваш бюджет» готов</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Квиз «{aiResultName}» готов</div>
                 <div style={{ fontSize: 12.5, color: "#6b7280", lineHeight: 1.6 }}>Обложка, {aiQn} вопросов с ветвлением, калькулятор стоимости и форма контактов со скидкой. Сохранён в черновики.</div>
                 <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 360 }}>
                   <Link href={routes.editor} style={{ flex: 1, textAlign: "center", background: "#28559c", color: "#ffffff", borderRadius: 9999, padding: "11px 0", fontSize: 13, fontWeight: 500 }}>Открыть в редакторе</Link>
@@ -345,6 +387,62 @@ export function CabinetApp() {
       )}
     </div>
   );
+}
+
+/* ---------- Live data mapping ---------- */
+
+const heatMap: Record<string, { heat: string; heatBg: string; heatColor: string }> = {
+  hot: { heat: "🔥 Горячий", heatBg: "rgba(194,65,12,0.10)", heatColor: "#c2410c" },
+  warm: { heat: "Тёплый", heatBg: "rgba(40,85,156,0.10)", heatColor: "#28559c" },
+  cold: { heat: "Холодный", heatBg: "rgba(107,114,128,0.12)", heatColor: "#6b7280" },
+};
+const statusToCol: Record<string, number> = { new: 0, work: 1, done: 2, rejected: 3 };
+
+function mapLeads(rows: ApiLead[]): Lead[] {
+  return rows.map((r) => {
+    const h = heatMap[r.heat] || heatMap.cold;
+    const when = (() => { try { return new Date(r.created_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })();
+    return {
+      id: r.id,
+      col: statusToCol[r.status] ?? 0,
+      quizName: r.quiz_name,
+      name: r.name || "Без имени",
+      phone: r.phone,
+      when,
+      ...h,
+      score: r.score,
+      summary: r.summary || "Ответы клиента сохранены. ИИ-обобщение появится при подключённом ключе Polza.ai.",
+      answers: (r.answers || []).map((a) => ({ q: a.q, a: a.a, t: a.t || "" })),
+      timeline: [{ e: "Оставил(а) заявку", meta: `${r.source} · ${when}`, hot: true }],
+    };
+  });
+}
+
+function deriveCrmQuizzes(rows: Lead[]): CrmQuiz[] {
+  const byName = new Map<string, CrmQuiz>();
+  for (const l of rows) {
+    const key = l.quizName || "Квиз";
+    const q = byName.get(key) || { name: key, new: 0, work: 0, done: 0, hot: 0, finish: "—" };
+    if (l.col === 0) q.new++; else if (l.col === 1) q.work++; else if (l.col === 2) q.done++;
+    if (l.heat.includes("Горячий")) q.hot++;
+    byName.set(key, q);
+  }
+  return [...byName.values()];
+}
+
+function quizToCard(q: ApiQuiz, leads: Lead[]): QuizCard {
+  const active = q.status === "active";
+  const count = leads.filter((l) => l.quizName === q.name).length;
+  return {
+    name: q.name,
+    where: `${q.slug} · ${active ? "опубликован" : "черновик"}`,
+    st: active ? "Активен" : "Черновик",
+    stBg: active ? "rgba(22,101,52,0.10)" : "rgba(17,24,39,0.07)",
+    stColor: active ? "#166534" : "#6b7280",
+    views: "—",
+    leads: count ? String(count) : "—",
+    cr: "—",
+  };
 }
 
 /* ---------- Sections ---------- */
@@ -445,7 +543,7 @@ function WidgetBody({ type }: { type: string }) {
   );
 }
 
-function QuizzesSection({ onAi }: { onAi: () => void }) {
+function QuizzesSection({ quizzes, onAi }: { quizzes: QuizCard[]; onAi: () => void }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
@@ -485,7 +583,7 @@ function QuizzesSection({ onAi }: { onAi: () => void }) {
   );
 }
 
-function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { crmQuiz: number | null; setCrmQuiz: (v: number | null) => void; crmTab: "board" | "anal"; setCrmTab: (v: "board" | "anal") => void; openLead: (id: number) => void }) {
+function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead, leads, crmQuizzes }: { crmQuiz: number | null; setCrmQuiz: (v: number | null) => void; crmTab: "board" | "anal"; setCrmTab: (v: "board" | "anal") => void; openLead: (id: number) => void; leads: Lead[]; crmQuizzes: CrmQuiz[] }) {
   if (crmQuiz === null) {
     return (
       <div>
@@ -524,8 +622,8 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
           </div>
           <div>
-            <h1 style={{ ...h1, fontSize: 20 }}>{["Подбор кухни", "Шкафы-купе", "Ремонт под ключ"][crmQuiz]}</h1>
-            <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 2 }}>52 заявки в июле · конверсия 7,1%</div>
+            <h1 style={{ ...h1, fontSize: 20 }}>{crmQuizzes[crmQuiz]?.name ?? "Квиз"}</h1>
+            <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 2 }}>Встроенная CRM · заявки по квизу</div>
           </div>
         </div>
         <div style={{ display: "flex", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 9999, padding: 3 }}>
@@ -539,7 +637,8 @@ function LeadsSection({ crmQuiz, setCrmQuiz, crmTab, setCrmTab, openLead }: { cr
         <div style={{ overflowX: "auto", paddingBottom: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(240px,1fr))", gap: 14, minWidth: 1000 }}>
             {columns.map((col, ci) => {
-              const cards = crmLeads.filter((l) => l.col === ci);
+              const quizName = crmQuizzes[crmQuiz]?.name;
+              const cards = leads.filter((l) => l.col === ci && (!l.quizName || l.quizName === quizName));
               return (
                 <div key={col.label} style={{ background: "rgba(255,255,255,0.6)", borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 6px" }}>
@@ -739,8 +838,9 @@ function IntegModal({ idx, vals, setVals, tg, setTg, tested, setTested, connecte
   );
 }
 
-function AiIdle({ onClose, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAiTone, aiQn, setAiQn, aiCalc, setAiCalc, onRun }: {
+function AiIdle({ onClose, business, setBusiness, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAiTone, aiQn, setAiQn, aiCalc, setAiCalc, onRun }: {
   onClose: () => void;
+  business: string; setBusiness: (v: string) => void;
   aiGoal: number; setAiGoal: (v: number) => void;
   aiBonus: number; setAiBonus: (v: number) => void;
   aiTone: number; setAiTone: (v: number) => void;
@@ -763,7 +863,12 @@ function AiIdle({ onClose, aiGoal, setAiGoal, aiBonus, setAiBonus, aiTone, setAi
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 7 }}>Опишите ваш бизнес и что продаёте</div>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.5, color: "#111827", minHeight: 56 }}>Студия кухонь на заказ в Санкт-Петербурге. Средний чек 350 тысяч, срок изготовления 30 дней, бесплатный замер.</div>
+          <textarea
+            value={business}
+            onChange={(e) => setBusiness(e.target.value)}
+            rows={3}
+            style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.5, color: "#111827", fontFamily: "inherit", resize: "vertical", outlineColor: "#28559c" }}
+          />
         </div>
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Цель квиза</div>
