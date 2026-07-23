@@ -51,8 +51,28 @@
       openAnim: s.openAnim || DEF.openAnim,
       button: merge(DEF.button, s.button),
       display: merge(DEF.display, s.display),
-      thanks: merge({ emoji: "✅", title: "Заявка отправлена!", text: "Мы свяжемся с вами в ближайшее время", redirectUrl: "", redirectSec: 3 }, s.thanks)
+      thanks: merge({ emoji: "✅", title: "Заявка отправлена!", text: "Мы свяжемся с вами в ближайшее время", redirectUrl: "", redirectSec: 3 }, s.thanks),
+      discount: merge({ enabled: false, text: "Скидка сгорает через", minutes: 15, bg: "#0F1F3C", color: "#ffffff" }, s.discount)
     };
+  }
+
+  // Тающая скидка: плашка с обратным отсчётом. Дедлайн — в localStorage на посетителя.
+  function makeDiscountBar(d) {
+    var bar = el("div", "display:flex;align-items:center;gap:10px;justify-content:center;max-width:420px;margin:0 auto 12px;background:" + d.bg + ";color:" + d.color + ";border-radius:12px;padding:10px 16px;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(15,31,60,.18);font-family:-apple-system,Segoe UI,Arial,sans-serif;");
+    bar.appendChild(el("span", null, d.text));
+    var timer = el("span", "font-variant-numeric:tabular-nums;background:rgba(255,255,255,.18);border-radius:8px;padding:4px 9px;letter-spacing:.5px;");
+    bar.appendChild(timer);
+    var key = "qv_disc_" + slug, deadline = 0;
+    try { var saved = Number(localStorage.getItem(key)); if (saved && saved > Date.now()) deadline = saved; } catch (e) { /* ignore */ }
+    if (!deadline) { deadline = Date.now() + d.minutes * 60000; try { localStorage.setItem(key, String(deadline)); } catch (e) { /* ignore */ } }
+    function tick() {
+      var left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      var mm = String(Math.floor(left / 60)); while (mm.length < 2) mm = "0" + mm;
+      var ss = String(left % 60); while (ss.length < 2) ss = "0" + ss;
+      timer.textContent = mm + ":" + ss;
+    }
+    tick(); setInterval(tick, 1000);
+    return bar;
   }
 
   function api(path, opts) { return fetch(origin + path, opts).then(function (r) { return r.json(); }); }
@@ -76,12 +96,27 @@
     return e;
   }
 
+  // Скрытые поля: UTM-метки, рекламные id, реферер
+  function collectUtm() {
+    var out = {};
+    try {
+      var p = new URLSearchParams(location.search);
+      ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "gclid", "yclid", "fbclid"].forEach(function (k) {
+        var v = p.get(k); if (v) out[k] = v.slice(0, 200);
+      });
+      if (document.referrer) out.referrer = document.referrer.slice(0, 300);
+      out.page = location.href.slice(0, 300);
+    } catch (e) { /* ignore */ }
+    return out;
+  }
+
   function render(container, quiz, cfg) {
     var steps = Array.isArray(quiz.steps) ? quiz.steps : [];
     var idx = 0, answers = [];
     var accent = cfg.button.bg, prColor = cfg.display.progressColor || accent;
     var slideKf = ANIM[cfg.slideAnim] || "";
 
+    if (cfg.discount && cfg.discount.enabled) container.appendChild(makeDiscountBar(cfg.discount));
     var card = el("div", "font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:420px;margin:0 auto;background:#fff;border-radius:20px;box-shadow:0 12px 40px rgba(17,24,39,.12);padding:28px;box-sizing:border-box;");
     container.appendChild(card);
     track("open");
@@ -123,7 +158,7 @@
           send.disabled = true; send.textContent = "Отправляем…";
           api("/api/public/lead", {
             method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ slug: slug, name: name.value, phone: phone.value, answers: answers, source: source, finished: true })
+            body: JSON.stringify({ slug: slug, name: name.value, phone: phone.value, answers: answers, source: source, finished: true, utm: collectUtm() })
           }).then(function () {
             card.innerHTML = "";
             card.appendChild(el("div", "text-align:center;font-size:34px;padding-top:16px;", cfg.thanks.emoji));

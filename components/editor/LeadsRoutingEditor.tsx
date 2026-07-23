@@ -7,6 +7,7 @@ import { Field, inp, Section, Toggle } from "./controls";
 
 // Серверные каналы доставки заявок и поля, которые можно переопределить для квиза
 const CHANNELS: { kind: string; name: string; fields: { id: string; label: string; ph: string }[] }[] = [
+  { kind: "email", name: "E-mail", fields: [{ id: "to", label: "Куда слать заявки", ph: "sales@company.ru" }] },
   { kind: "telegram", name: "Telegram", fields: [{ id: "code", label: "Код подключения / chat id", ph: "как в общих настройках" }] },
   { kind: "max", name: "MAX", fields: [{ id: "code", label: "Код подключения / chat id", ph: "как в общих настройках" }] },
   { kind: "vk", name: "ВКонтакте", fields: [{ id: "gid", label: "ID сообщества", ph: "как в общих настройках" }] },
@@ -39,15 +40,17 @@ export function LeadsRoutingEditor({ rules, onChange }: {
           {CHANNELS.map((ch) => {
             const rule = rules[ch.kind] || {};
             const enabled = rule.enabled !== false;
-            const isConnected = !!connected?.[ch.kind];
             const hasOverride = !!rule.config && Object.values(rule.config).some((v) => v && v.trim());
+            const isConnected = ch.kind === "email" ? hasOverride : !!connected?.[ch.kind];
             return (
               <div key={ch.kind} style={{ background: "#fff", borderRadius: 16, padding: "14px 18px", opacity: connected === null ? 0.6 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{ch.name}</div>
                     <div style={{ fontSize: 11.5, color: isConnected ? "#166534" : "#9ca3af", marginTop: 2 }}>
-                      {isConnected ? (hasOverride ? "Подключено · свои ключи для этого квиза" : "Подключено · общие настройки") : "Не подключено в кабинете — канал не сработает"}
+                      {ch.kind === "email"
+                        ? (isConnected ? "Заявки уходят на эту почту" : "Укажите адрес — заявки пойдут на почту")
+                        : isConnected ? (hasOverride ? "Подключено · свои ключи для этого квиза" : "Подключено · общие настройки") : "Не подключено в кабинете — канал не сработает"}
                     </div>
                   </div>
                   <span style={{ fontSize: 12, color: enabled ? "#374151" : "#9ca3af" }}>{enabled ? "Вкл" : "Выкл"}</span>

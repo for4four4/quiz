@@ -378,7 +378,20 @@ export function CabinetApp() {
                       {ld.summary || "Обобщение появится, когда подключён ИИ (POLZA_API_KEY). Заявка со скорингом уже сохранена."}
                     </div>
                   </div>
-                  <div style={{ fontSize: 12.5, color: "#6b7280" }}>Квиз: <b style={{ color: "#111827" }}>{ld.quiz_name}</b> · источник: {ld.source}</div>
+                  <div style={{ fontSize: 12.5, color: "#6b7280" }}>Квиз: <b style={{ color: "#111827" }}>{ld.quiz_name}</b> · источник: {ld.source}{ld.ip ? ` · IP ${ld.ip}` : ""}</div>
+                  {ld.utm && Object.keys(ld.utm).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Скрытые поля (UTM / источник)</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {Object.entries(ld.utm).map(([k, v]) => (
+                          <div key={k} style={{ display: "flex", gap: 10, fontSize: 12, border: "1px solid #f0f0f0", borderRadius: 10, padding: "8px 12px" }}>
+                            <span style={{ color: "#9ca3af", flexShrink: 0, fontFamily: "ui-monospace,Menlo,monospace" }}>{k}</span>
+                            <span style={{ color: "#111827", wordBreak: "break-all" }}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {leadTab === "answers" && (
@@ -867,6 +880,7 @@ function InstallModal({ quiz, onClose }: { quiz: Quiz; onClose: () => void }) {
                 <div onClick={() => copy(link, "link")} style={{ flexShrink: 0, border: "1px solid #e5e7eb", borderRadius: 9999, padding: "8px 16px", fontSize: 12, fontWeight: 500, cursor: "pointer", color: copied === "link" ? "#166534" : "#374151" }}>{copied === "link" ? "✓" : "Копировать"}</div>
               </div>
             </div>
+            <DomainField quiz={quiz} origin={origin} />
           </div>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>QR-код квиза</div>
@@ -879,6 +893,55 @@ function InstallModal({ quiz, onClose }: { quiz: Quiz; onClose: () => void }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Свой домен к квизу (CNAME) ──────────────────────────── */
+function DomainField({ quiz, origin }: { quiz: Quiz; origin: string }) {
+  const [domain, setDomain] = useState(quiz.domain || "");
+  const [saved, setSaved] = useState(quiz.domain || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const targetHost = (() => { try { return new URL(origin).host; } catch { return "qvalify.ru"; } })();
+
+  const save = async (value: string) => {
+    setBusy(true); setMsg("");
+    try {
+      const res = await api.setDomain(quiz.id, value.trim());
+      setSaved(res.domain);
+      setDomain(res.domain);
+      setMsg(res.domain ? "Домен привязан" : "Домен отключён");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>4 · Свой домен (например, quiz.вашсайт.ру)</div>
+      <div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 8, lineHeight: 1.5 }}>
+        Квиз откроется на вашем домене как отдельная посадочная страница. У регистратора добавьте CNAME-запись
+        поддомена на <b style={{ color: "#111827" }}>{targetHost}</b>, затем впишите домен ниже.
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={domain}
+          onChange={(e) => setDomain(e.target.value)}
+          placeholder="quiz.вашсайт.ру"
+          style={{ flex: 1, minWidth: 0, border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontFamily: "ui-monospace,Menlo,monospace", color: "#111827", boxSizing: "border-box" }}
+        />
+        <div onClick={busy ? undefined : () => save(domain)} style={{ flexShrink: 0, borderRadius: 9999, padding: "9px 18px", fontSize: 12.5, fontWeight: 500, cursor: busy ? "default" : "pointer", background: "#28559c", color: "#fff", opacity: busy ? 0.6 : 1 }}>{busy ? "…" : saved ? "Обновить" : "Привязать"}</div>
+      </div>
+      {msg && <div style={{ fontSize: 11.5, color: msg.includes("Ошибка") || msg.includes("занят") || msg.includes("екоррект") ? "#b91c1c" : "#166534", marginTop: 6 }}>{msg}</div>}
+      {saved && (
+        <div style={{ fontSize: 11.5, color: "#6b7280", marginTop: 6 }}>
+          Активен: <a href={`https://${saved}`} target="_blank" rel="noreferrer" style={{ color: "#28559c" }}>{saved}</a>
+          <span onClick={() => { setDomain(""); save(""); }} style={{ marginLeft: 10, color: "#b91c1c", cursor: "pointer" }}>Отключить</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1104,7 +1167,48 @@ function SettingsSection({ me, leads, onLogout }: { me: Me | null; leads: Lead[]
             <Link href={routes.tarify} style={{ flex: 1, textAlign: "center", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "9px 0", fontSize: 12.5, fontWeight: 500 }}>Сменить тариф</Link>
           </div>
         </div>
+        <ProtectionCard />
       </div>
+    </div>
+  );
+}
+
+/* Защита от фрода: дубли + чёрный список IP */
+function ProtectionCard() {
+  const [dedupeHours, setDedupeHours] = useState(0);
+  const [blacklist, setBlacklist] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api.getSettings().then(({ settings }) => {
+      setDedupeHours(settings.dedupeHours || 0);
+      setBlacklist((settings.ipBlacklist || []).join("\n"));
+    }).catch(() => {}).finally(() => setLoaded(true));
+  }, []);
+  const save = async () => {
+    try {
+      await api.saveSettings({ dedupeHours, ipBlacklist: blacklist.split(/[\n,;\s]+/).map((x) => x.trim()).filter(Boolean) });
+      setSaved(true); setTimeout(() => setSaved(false), 1600);
+    } catch (e) { alert(e instanceof Error ? e.message : "Ошибка"); }
+  };
+  return (
+    <div style={{ background: "#ffffff", borderRadius: 20, padding: 24, gridColumn: "1 / -1", maxWidth: 920 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Защита от фрода</div>
+      <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 16 }}>Отсекает повторные и мусорные заявки — экономит бюджет на рекламе.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Защита от дублей</div>
+          <div style={{ fontSize: 11.5, color: "#9ca3af", marginBottom: 8 }}>Не принимать повторную заявку с того же телефона в течение N часов (0 — выключено).</div>
+          <input type="number" min={0} max={720} value={dedupeHours} onChange={(e) => setDedupeHours(Math.max(0, Math.min(720, Math.round(Number(e.target.value) || 0))))} style={{ width: 120, boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 13 }} />
+          <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>часов</span>
+        </div>
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Чёрный список IP</div>
+          <div style={{ fontSize: 11.5, color: "#9ca3af", marginBottom: 8 }}>Заявки с этих IP отклоняются. По одному в строке.</div>
+          <textarea value={blacklist} onChange={(e) => setBlacklist(e.target.value)} rows={4} placeholder="203.0.113.5&#10;198.51.100.22" style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontFamily: "ui-monospace,Menlo,monospace", resize: "vertical" }} />
+        </div>
+      </div>
+      <div onClick={save} style={{ marginTop: 16, display: "inline-block", background: saved ? "#166534" : "#28559c", color: "#fff", borderRadius: 9999, padding: "9px 24px", fontSize: 13, fontWeight: 500, cursor: loaded ? "pointer" : "default", opacity: loaded ? 1 : 0.6, transition: "background .2s" }}>{saved ? "✓ Сохранено" : "Сохранить защиту"}</div>
     </div>
   );
 }

@@ -1,53 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ensureSchema, query } from "@/lib/server/db";
-import QuizRuntime, { type PublicQuiz } from "@/components/quiz/QuizRuntime";
-import { migrateToDoc, type QuizDoc } from "@/lib/quiz/doc";
-import { pickAbVariant } from "@/lib/server/ab";
+import QuizRuntime from "@/components/quiz/QuizRuntime";
+import { loadQuizBySlug } from "@/lib/server/publicQuiz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type Row = { slug: string; name: string; steps: unknown; design: unknown; metrika: string | null };
-
-type DesignShape = {
-  doc?: QuizDoc;
-  accent?: string;
-  bg?: string;
-  cover?: { title?: string; subtitle?: string; benefits?: string[] };
-  contactForm?: { title?: string; bonus?: string };
-};
-
-async function loadQuiz(slug: string): Promise<PublicQuiz | null> {
-  try {
-    await ensureSchema();
-    // A/B: с вероятностью split% показываем вариант B (события/заявки пишутся на него)
-    const picked = await pickAbVariant(slug);
-    if (!picked) return null;
-    const [row] = await query<Row>(
-      `SELECT q.slug, q.name, q.steps, q.design,
-              (SELECT i.config->>'counter' FROM integrations i
-                WHERE i.user_id = q.user_id AND i.kind='metrika' AND i.enabled=true
-                  AND COALESCE(i.config->>'counter','') <> '' LIMIT 1) AS metrika
-         FROM quizzes q WHERE q.slug=$1 AND q.status='active'`,
-      [picked.slug]
-    );
-    if (!row) return null;
-    const design = (row.design && typeof row.design === "object" ? row.design : {}) as DesignShape;
-    const simpleSteps = Array.isArray(row.steps) ? (row.steps as { question?: string; options?: string[] }[]) : [];
-    const doc: QuizDoc = design.doc && Array.isArray(design.doc.steps) && design.doc.steps.length
-      ? design.doc
-      : migrateToDoc(simpleSteps, design);
-    return {
-      slug: row.slug,
-      name: row.name,
-      doc,
-      metrikaCounter: row.metrika || undefined,
-    };
-  } catch {
-    return null;
-  }
-}
 
 export async function generateMetadata({
   params,
@@ -55,7 +12,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const quiz = await loadQuiz(slug);
+  const quiz = await loadQuizBySlug(slug);
   return {
     title: quiz?.name || "Квиз",
     robots: { index: false },
@@ -69,7 +26,7 @@ export default async function PublicQuizPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const quiz = await loadQuiz(slug);
+  const quiz = await loadQuizBySlug(slug);
   if (!quiz) notFound();
   return <QuizRuntime quiz={quiz} />;
 }

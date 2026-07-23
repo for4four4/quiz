@@ -100,17 +100,31 @@ export type QuizThanks = {
   redirectSec?: number;   // задержка перед переадресацией
 };
 
+/** Тающая скидка — таймер обратного отсчёта над окном квиза (конверсионный триггер). */
+export type QuizDiscount = {
+  enabled: boolean;
+  text: string;           // текст рядом с таймером
+  minutes: number;        // сколько минут отсчитывать
+  bg: string;             // фон плашки
+  color: string;          // цвет текста
+};
+
 export type QuizSettings = {
   slideAnim: SlideAnim;
   openAnim: OpenAnim;
   button: QuizButton;
   display: QuizDisplay;
   thanks?: QuizThanks;
+  discount?: QuizDiscount;
   hideBadge?: boolean;    // скрыть «Сделано на Квалифай»
 };
 
 export function defaultThanks(): QuizThanks {
   return { emoji: "✅", title: "Заявка отправлена!", text: "Спасибо! Мы свяжемся с вами в ближайшее время.", redirectUrl: "", redirectSec: 3 };
+}
+
+export function defaultDiscount(): QuizDiscount {
+  return { enabled: false, text: "Скидка сгорает через", minutes: 15, bg: "#0F1F3C", color: "#ffffff" };
 }
 
 /** Правила доставки заявок этого квиза: по умолчанию — во все подключённые
@@ -149,6 +163,7 @@ export function defaultSettings(accent = "#28559c"): QuizSettings {
     button: { text: "Пройти квиз", sub: "Займёт 1 минуту", showSub: true, bg: accent, color: "#ffffff", width: 220, height: 56, radius: 28, icon: true, position: 8, fullscreen: false },
     display: { mode: "popup", trigger: "click", delaySec: 15, pageUrl: "/", dim: 45, popupBg: "transparent", popupImages: [], position: "center", progressOn: true, progressStyle: "line", progressColor: accent },
     thanks: defaultThanks(),
+    discount: defaultDiscount(),
     hideBadge: false,
   };
 }
@@ -156,7 +171,7 @@ export function defaultSettings(accent = "#28559c"): QuizSettings {
 export function withSettings(doc: QuizDoc): QuizSettings {
   const d = defaultSettings(doc.theme.accent);
   if (!doc.settings) return d;
-  return { ...d, ...doc.settings, button: { ...d.button, ...doc.settings.button }, display: { ...d.display, ...doc.settings.display }, thanks: { ...defaultThanks(), ...(doc.settings.thanks || {}) } };
+  return { ...d, ...doc.settings, button: { ...d.button, ...doc.settings.button }, display: { ...d.display, ...doc.settings.display }, thanks: { ...defaultThanks(), ...(doc.settings.thanks || {}) }, discount: { ...defaultDiscount(), ...(doc.settings.discount || {}) } };
 }
 
 export const FONTS: Record<string, string> = {

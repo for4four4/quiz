@@ -136,7 +136,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
       const res = await fetch("/api/public/lead", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug: quiz.slug, name: contact.name, phone: contact.phone, email: contact.email, answers, source: "прямая ссылка", finished: true }),
+        body: JSON.stringify({ slug: quiz.slug, name: contact.name, phone: contact.phone, email: contact.email, answers, source: "прямая ссылка", finished: true, utm: collectUtm() }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) throw new Error(data.error || "Не удалось отправить");
@@ -168,6 +168,7 @@ export default function QuizRuntime({ quiz }: { quiz: PublicQuiz }) {
 
   return (
     <main style={{ ...pageStyle, fontFamily: FONTS[doc.theme.font] || FONTS.system }}>
+      {settings.discount?.enabled && !done && <DiscountBar discount={settings.discount} slug={quiz.slug} />}
       <div style={{ ...cardStyleDyn, ...cardBg }}>
         {settings.display.progressOn && (
           <div style={barStyle}><div style={{ ...fillStyle, width: `${progress}%`, background: progressColor }} /></div>
@@ -278,6 +279,53 @@ function BlockView({ block, accent, free, contact, setContact, onPick, onButton,
       </div>
     </div>
   );
+}
+
+// Тающая скидка: таймер обратного отсчёта над окном квиза.
+// Дедлайн фиксируется в localStorage на посетителя — не сбрасывается при обновлении.
+function DiscountBar({ discount, slug }: { discount: NonNullable<QuizDoc["settings"]>["discount"]; slug: string }) {
+  const d = discount!;
+  const [left, setLeft] = useState(d.minutes * 60);
+  useEffect(() => {
+    const key = `qv_disc_${slug}`;
+    let deadline = 0;
+    try {
+      const saved = Number(localStorage.getItem(key));
+      if (saved && saved > Date.now()) deadline = saved;
+    } catch { /* ignore */ }
+    if (!deadline) {
+      deadline = Date.now() + d.minutes * 60 * 1000;
+      try { localStorage.setItem(key, String(deadline)); } catch { /* ignore */ }
+    }
+    const tick = () => setLeft(Math.max(0, Math.round((deadline - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [slug, d.minutes]);
+  const mm = String(Math.floor(left / 60)).padStart(2, "0");
+  const ss = String(left % 60).padStart(2, "0");
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: d.bg, color: d.color, borderRadius: 12, padding: "10px 16px", fontSize: 14, fontWeight: 600, boxShadow: "0 8px 24px rgba(15,31,60,0.18)" }}>
+      <span>{d.text}</span>
+      <span style={{ fontVariantNumeric: "tabular-nums", background: "rgba(255,255,255,0.18)", borderRadius: 8, padding: "4px 9px", letterSpacing: 0.5 }}>{mm}:{ss}</span>
+    </div>
+  );
+}
+
+// Скрытые поля: собираем UTM-метки, рекламные id и реферер (сквозная аналитика)
+function collectUtm(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const out: Record<string, string> = {};
+  try {
+    const p = new URLSearchParams(window.location.search);
+    for (const k of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "gclid", "yclid", "fbclid"]) {
+      const v = p.get(k);
+      if (v) out[k] = v.slice(0, 200);
+    }
+    if (document.referrer) out.referrer = document.referrer.slice(0, 300);
+    out.page = window.location.href.slice(0, 300);
+  } catch { /* ignore */ }
+  return out;
 }
 
 function SliderBlock({ images, width, height, radius }: { images: string[]; width: string; height: number; radius: number }) {

@@ -5,7 +5,7 @@ import { requireSession } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type QuizRow = { id: number; slug: string; name: string; status: string; steps: unknown; design: unknown };
+type QuizRow = { id: number; slug: string; name: string; status: string; steps: unknown; design: unknown; domain: string | null };
 
 // Транслитерация кириллицы в латиницу — чистые ASCII-URL (/q/kuhni-...).
 const TRANSLIT: Record<string, string> = {
@@ -31,7 +31,7 @@ export async function GET() {
     const s = await requireSession();
     await ensureSchema();
     const rows = await query<QuizRow>(
-      "SELECT id,slug,name,status,steps,design FROM quizzes WHERE user_id=$1 ORDER BY updated_at DESC",
+      "SELECT id,slug,name,status,steps,design,domain FROM quizzes WHERE user_id=$1 ORDER BY updated_at DESC",
       [s.uid]
     );
     return NextResponse.json({ quizzes: rows });
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     await ensureSchema();
     const { name, steps, design } = (await req.json()) as { name?: string; steps?: unknown; design?: unknown };
     const [row] = await query<QuizRow>(
-      "INSERT INTO quizzes (user_id,slug,name,steps,design) VALUES ($1,$2,$3,$4,$5) RETURNING id,slug,name,status,steps,design",
+      "INSERT INTO quizzes (user_id,slug,name,steps,design) VALUES ($1,$2,$3,$4,$5) RETURNING id,slug,name,status,steps,design,domain",
       [s.uid, slugify(name || "Новый квиз"), name || "Новый квиз", JSON.stringify(steps || []), JSON.stringify(design || {})]
     );
     return NextResponse.json({ quiz: row });

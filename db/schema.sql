@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS integrations (
   UNIQUE (user_id, kind)
 );
 
+-- Идемпотентные миграции (добавление колонок к существующим таблицам)
+ALTER TABLE leads   ADD COLUMN IF NOT EXISTS ip   TEXT NOT NULL DEFAULT '';
+ALTER TABLE leads   ADD COLUMN IF NOT EXISTS utm  JSONB NOT NULL DEFAULT '{}';  -- скрытые поля: utm_*, referrer
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS domain TEXT;                        -- свой домен квиза (CNAME)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_domain ON quizzes(domain) WHERE domain IS NOT NULL AND domain <> '';
+ALTER TABLE users   ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'; -- защита: dedupeHours, ipBlacklist[]
+
 -- События посетителей для воронки и аналитики шагов
 CREATE TABLE IF NOT EXISTS events (
   id          BIGSERIAL PRIMARY KEY,

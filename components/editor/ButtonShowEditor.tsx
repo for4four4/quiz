@@ -10,17 +10,19 @@ const POPUP_BGS: [string, string][] = [
   ["linear-gradient(135deg,#1c2c47,#3f5e8f)", "Тёмный"],
 ];
 
-export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThanks, onMisc }: {
+export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThanks, onDiscount, onMisc }: {
   settings: QuizSettings;
   onButton: (p: Partial<QuizSettings["button"]>) => void;
   onDisplay: (p: Partial<QuizSettings["display"]>) => void;
   onAnim: (p: Partial<Pick<QuizSettings, "slideAnim" | "openAnim">>) => void;
   onThanks: (p: Partial<NonNullable<QuizSettings["thanks"]>>) => void;
+  onDiscount: (p: Partial<NonNullable<QuizSettings["discount"]>>) => void;
   onMisc: (p: Partial<Pick<QuizSettings, "hideBadge">>) => void;
 }) {
   const b = settings.button;
   const d = settings.display;
   const th = settings.thanks!;
+  const disc = settings.discount!;
   const [replay, setReplay] = useState(0);
 
   const col = b.position % 3, row = Math.floor(b.position / 3);
@@ -113,6 +115,23 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThan
         <Section title="Анимации">
           <Field label="Появление попапа"><Chips value={settings.openAnim} onChange={(v) => { onAnim({ openAnim: v as QuizSettings["openAnim"] }); setReplay((r) => r + 1); }} options={OPEN_ANIM_LABELS} /></Field>
           <Field label="Переключение слайдов"><Chips value={settings.slideAnim} onChange={(v) => { onAnim({ slideAnim: v as QuizSettings["slideAnim"] }); setReplay((r) => r + 1); }} options={SLIDE_ANIM_LABELS} /></Field>
+        </Section>
+
+        <Section title="Тающая скидка (таймер)">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>Показывать таймер</span>
+            <Toggle on={disc.enabled} onClick={() => onDiscount({ enabled: !disc.enabled })} />
+          </div>
+          {disc.enabled && <>
+            <Field label="Текст рядом с таймером"><input value={disc.text} onChange={(e) => onDiscount({ text: e.target.value })} style={inp} /></Field>
+            <Slider label="Сколько минут отсчитывать" v={disc.minutes} min={1} max={120} unit=" мин" onChange={(v) => onDiscount({ minutes: v })} />
+            <ColorRow label="Фон плашки" value={disc.bg} onChange={(v) => onDiscount({ bg: v })} />
+            <ColorRow label="Цвет текста" value={disc.color} onChange={(v) => onDiscount({ color: v })} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: disc.bg, color: disc.color, borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 600, justifyContent: "center" }}>
+              <span>{disc.text}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums", background: "rgba(255,255,255,0.18)", borderRadius: 8, padding: "3px 8px" }}>{String(disc.minutes).padStart(2, "0")}:00</span>
+            </div>
+          </>}
         </Section>
 
         <Section title="Экран «Спасибо» после заявки">

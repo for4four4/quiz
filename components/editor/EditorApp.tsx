@@ -297,6 +297,7 @@ export function EditorApp() {
   const onDisplay = (p: Partial<QuizSettings["display"]>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, display: { ...s.display, ...p } } }; }); touch(); };
   const onAnim = (p: Partial<Pick<QuizSettings, "slideAnim" | "openAnim">>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, ...p } } as QuizDoc; }); touch(); };
   const onThanks = (p: Partial<NonNullable<QuizSettings["thanks"]>>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, thanks: { ...s.thanks!, ...p } } }; }); touch(); };
+  const onDiscount = (p: Partial<NonNullable<QuizSettings["discount"]>>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, discount: { ...s.discount!, ...p } } }; }); touch(); };
   const onMisc = (p: Partial<Pick<QuizSettings, "hideBadge">>) => { setDoc((d) => { const s = withSettings(d); return { ...d, settings: { ...s, ...p } }; }); touch(); };
   const onIntegrations = (kind: string, patch: { enabled?: boolean; config?: Record<string, string> }) => {
     setDoc((d) => { const cur = d.integrations || {}; return { ...d, integrations: { ...cur, [kind]: { ...(cur[kind] || {}), ...patch } } }; }); touch();
@@ -371,7 +372,7 @@ export function EditorApp() {
       {editMode === "leads" ? (
         <LeadsRoutingEditor rules={doc.integrations || {}} onChange={onIntegrations} />
       ) : editMode === "button" ? (
-        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} onThanks={onThanks} onMisc={onMisc} />
+        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} onThanks={onThanks} onDiscount={onDiscount} onMisc={onMisc} />
       ) : (
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Left: steps + palette */}

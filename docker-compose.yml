@@ -45,6 +45,12 @@ services:
       POLZA_BASE_URL: ${POLZA_BASE_URL:-https://polza.ai/api/v1}
       LLM_MODEL_FAST: ${LLM_MODEL_FAST:-anthropic/claude-haiku-4.5}
       LLM_MODEL_SMART: ${LLM_MODEL_SMART:-anthropic/claude-sonnet-4.6}
+      # SMTP — отправка заявок на почту (канал «E-mail», необязательно)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       # Интеграции-мессенджеры (необязательно)
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       VK_TOKEN: ${VK_TOKEN:-}

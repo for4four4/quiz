@@ -5,14 +5,14 @@ import { requireSession } from "@/lib/server/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type QuizRow = { id: number; slug: string; name: string; status: string; steps: unknown; design: unknown };
+type QuizRow = { id: number; slug: string; name: string; status: string; steps: unknown; design: unknown; domain: string | null };
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const s = await requireSession();
     const { id } = await params;
     await ensureSchema();
-    const [row] = await query<QuizRow>("SELECT id,slug,name,status,steps,design FROM quizzes WHERE id=$1 AND user_id=$2", [id, s.uid]);
+    const [row] = await query<QuizRow>("SELECT id,slug,name,status,steps,design,domain FROM quizzes WHERE id=$1 AND user_id=$2", [id, s.uid]);
     if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
     return NextResponse.json({ quiz: row });
   } catch (e) {
@@ -35,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
          design = COALESCE($6, design),
          updated_at = now()
        WHERE id=$1 AND user_id=$2
-       RETURNING id,slug,name,status,steps,design`,
+       RETURNING id,slug,name,status,steps,design,domain`,
       [id, s.uid, b.name ?? null, b.status ?? null, b.steps ? JSON.stringify(b.steps) : null, b.design ? JSON.stringify(b.design) : null]
     );
     if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });

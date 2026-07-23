@@ -24,6 +24,7 @@ export type Quiz = {
   status: string;
   steps: QuizStep[];
   design: QuizDesign;
+  domain?: string | null;
 };
 
 export type Lead = {
@@ -40,6 +41,8 @@ export type Lead = {
   summary: string;
   status: string;
   created_at: string;
+  ip?: string;
+  utm?: Record<string, string>;
 };
 
 export type Integration = {
@@ -47,6 +50,12 @@ export type Integration = {
   kind: string;
   config: Record<string, string>;
   enabled: boolean;
+};
+
+export type AccountSettings = {
+  dedupeHours?: number;
+  ipBlacklist?: string[];
+  emailNotify?: string;
 };
 
 export type PerQuizStat = { open: number; start: number; contact: number; lead: number; steps: Record<string, number> };
@@ -69,6 +78,10 @@ export const api = {
   me: () => fetch("/api/auth").then((r) => j<{ user: Me | null }>(r)),
   logout: () => fetch("/api/auth?action=logout", { method: "POST" }).then((r) => j(r)),
 
+  getSettings: () => fetch("/api/settings").then((r) => j<{ settings: AccountSettings }>(r)),
+  saveSettings: (settings: AccountSettings) =>
+    fetch("/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }).then((r) => j<{ settings: AccountSettings }>(r)),
+
   quizzes: () => fetch("/api/quizzes").then((r) => j<{ quizzes: Quiz[] }>(r)),
   quiz: (id: string) => fetch(`/api/quizzes/${id}`).then((r) => j<{ quiz: Quiz }>(r)),
   createQuiz: (body: { name: string; steps?: QuizStep[]; design?: QuizDesign }) =>
@@ -84,6 +97,12 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => j<{ quiz: Quiz }>(r)),
   deleteQuiz: (id: string) => fetch(`/api/quizzes/${id}`, { method: "DELETE" }).then((r) => j(r)),
+  setDomain: (id: string, domain: string) =>
+    fetch(`/api/quizzes/${id}/domain`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ domain }),
+    }).then((r) => j<{ domain: string }>(r)),
 
   stats: () => fetch("/api/stats").then((r) => j<Stats>(r)),
 

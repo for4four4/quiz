@@ -26,7 +26,13 @@ type Body = {
   answers?: Answer[];
   source?: string;
   finished?: boolean;
+  utm?: Record<string, string>; // скрытые поля: utm_*, referrer, page
 };
+
+function clientIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for") || "";
+  return (fwd.split(",")[0] || req.headers.get("x-real-ip") || "").trim();
+}
 
 // POST /api/public/lead — приём заявки из квиза: скоринг, обобщение ИИ, диспатч в интеграции
 export async function POST(req: Request) {
@@ -43,6 +49,27 @@ export async function POST(req: Request) {
     );
     if (!quiz) return NextResponse.json({ error: "Квиз не найден" }, { status: 404, headers: cors });
 
+    const ip = clientIp(req);
+    const utm = b.utm && typeof b.utm === "object" ? b.utm : {};
+
+    // Защита от фрода: чёрный список IP + защита от дублей (настройки владельца)
+    const [owner] = await query<{ settings: { ipBlacklist?: string[]; dedupeHours?: number } | null }>(
+      "SELECT settings FROM users WHERE id=$1",
+      [quiz.user_id]
+    );
+    const protect = owner?.settings || {};
+    if (ip && Array.isArray(protect.ipBlacklist) && protect.ipBlacklist.map((x) => x.trim()).includes(ip)) {
+      return NextResponse.json({ error: "Заявка отклонена" }, { status: 403, headers: cors });
+    }
+    const dedupeHours = Number(protect.dedupeHours || 0);
+    if (dedupeHours > 0) {
+      const [dup] = await query<{ id: number }>(
+        `SELECT id FROM leads WHERE quiz_id=$1 AND phone=$2 AND created_at > now() - make_interval(hours => $3) LIMIT 1`,
+        [quiz.id, b.phone, dedupeHours]
+      );
+      if (dup) return NextResponse.json({ ok: true, duplicate: true }, { headers: cors });
+    }
+
     const answers = b.answers || [];
     const { score, heat } = scoreLead(answers, { finished: b.finished ?? true, hasPhone: !!b.phone });
 
@@ -57,9 +84,9 @@ export async function POST(req: Request) {
     }
 
     const [lead] = await query<{ id: number }>(
-      `INSERT INTO leads (quiz_id,name,phone,email,answers,source,score,heat,summary)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-      [quiz.id, b.name || "", b.phone, b.email || "", JSON.stringify(answers), b.source || "прямая ссылка", score, heat, summary]
+      `INSERT INTO leads (quiz_id,name,phone,email,answers,source,score,heat,summary,ip,utm)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [quiz.id, b.name || "", b.phone, b.email || "", JSON.stringify(answers), b.source || "прямая ссылка", score, heat, summary, ip, JSON.stringify(utm)]
     );
 
     // Событие воронки "lead" (best-effort, не влияет на приём заявки)
@@ -83,6 +110,11 @@ export async function POST(req: Request) {
         const filled = Object.fromEntries(Object.entries(over).filter(([, v]) => v && String(v).trim()));
         return Object.keys(filled).length ? { ...i, config: { ...i.config, ...filled } } : i;
       });
+    // E-mail: работает через SMTP (.env) + адрес получателя из настроек квиза.
+    const emailRule = rules.email;
+    if (emailRule?.enabled !== false && emailRule?.config?.to && emailRule.config.to.trim()) {
+      integrations.push({ kind: "email", config: { to: emailRule.config.to.trim() }, enabled: true });
+    }
     if (integrations.length) {
       await dispatchLead(integrations, {
         quizName: quiz.name,

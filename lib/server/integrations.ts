@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import nodemailer from "nodemailer";
 import { env } from "./env";
 
 export type LeadPayload = {
@@ -67,6 +68,34 @@ async function sendWebhook(url: string, secret: string | undefined, l: LeadPaylo
   await fetch(url, { method: "POST", headers, body });
 }
 
+// Результаты на почту владельца (SMTP из .env)
+async function sendEmail(to: string, l: LeadPayload) {
+  if (!to || !env.smtp.host) return;
+  const transporter = nodemailer.createTransport({
+    host: env.smtp.host,
+    port: env.smtp.port,
+    secure: env.smtp.port === 465,
+    auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
+  });
+  const rows = l.answers.map((a) => `<tr><td style="padding:6px 12px;color:#6b7280">${esc(a.q)}</td><td style="padding:6px 12px;font-weight:600">${esc(a.a)}</td></tr>`).join("");
+  await transporter.sendMail({
+    from: `Квалифай <${env.smtp.from}>`,
+    to,
+    subject: `Новая заявка · ${l.quizName} · ${l.phone}`,
+    text: leadText(l),
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px">
+      <h2 style="color:#0F1F3C">Новая заявка · ${esc(l.quizName)}</h2>
+      <p><b>${esc(l.name || "Без имени")}</b> · ${esc(l.phone)}${l.email ? " · " + esc(l.email) : ""}</p>
+      <p style="color:#6b7280">Источник: ${esc(l.source)} · скоринг <b>${l.score}/100</b></p>
+      <table style="border-collapse:collapse;background:#f8f9fb;border-radius:8px">${rows}</table>
+      ${l.summary ? `<p style="background:#eef2f9;border-radius:8px;padding:10px 14px">🤖 ${esc(l.summary)}</p>` : ""}
+    </div>`,
+  });
+}
+function esc(s: string): string {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 // Битрикс24 — входящий вебхук: создаём лид (crm.lead.add).
 async function sendBitrix24(webhookUrl: string, l: LeadPayload) {
   if (!webhookUrl) return;
@@ -129,6 +158,7 @@ export async function dispatchLead(integrations: IntegrationRow[], lead: LeadPay
           case "webhook": return sendWebhook(c.url, c.secret, lead);
           case "bitrix24": return sendBitrix24(c.url, lead);
           case "amocrm": return sendAmocrm(c.domain, c.token, lead);
+          case "email": return sendEmail(c.to, lead);
           default: return Promise.resolve();
         }
       })

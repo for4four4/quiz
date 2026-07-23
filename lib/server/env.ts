@@ -19,6 +19,14 @@ export const env = {
   telegram: { botToken: process.env.TELEGRAM_BOT_TOKEN || "" },
   vk: { token: process.env.VK_TOKEN || "" },
   max: { botToken: process.env.MAX_BOT_TOKEN || "" },
+
+  smtp: {
+    host: process.env.SMTP_HOST || "",
+    port: Number(process.env.SMTP_PORT || 465),
+    user: process.env.SMTP_USER || "",
+    pass: process.env.SMTP_PASS || "",
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || "",
+  },
 };
 
 export function assertConfigured(name: string, value: string): string {

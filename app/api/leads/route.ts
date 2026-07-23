@@ -19,6 +19,8 @@ type LeadRow = {
   summary: string;
   status: string;
   created_at: string;
+  ip: string;
+  utm: unknown;
 };
 
 // GET /api/leads[?quiz=<id>] — заявки по всем квизам пользователя (или одному)
@@ -29,7 +31,7 @@ export async function GET(req: Request) {
     const quizId = new URL(req.url).searchParams.get("quiz");
     const rows = await query<LeadRow>(
       `SELECT l.id, l.quiz_id, q.name AS quiz_name, l.name, l.phone, l.email,
-              l.answers, l.source, l.score, l.heat, l.summary, l.status, l.created_at
+              l.answers, l.source, l.score, l.heat, l.summary, l.status, l.created_at, l.ip, l.utm
          FROM leads l
          JOIN quizzes q ON q.id = l.quiz_id
         WHERE q.user_id = $1 ${quizId ? "AND l.quiz_id = $2" : ""}
