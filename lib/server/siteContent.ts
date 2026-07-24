@@ -4,10 +4,19 @@ import { ensureSchema, query } from "./db";
 // Редактируемый через админку контент сайта. Пока — новости; далее тарифы/тексты.
 export type NewsTag = "feature" | "integ" | "platform";
 export type NewsItem = { date: string; tag: NewsTag; title: string; text: string };
+export type VolumePack = { n: number; p: number };
+export type FreeFeature = { ok: boolean; text: string };
 export type SiteContent = {
   news: {
     featured: { date: string; title: string; text: string };
     items: NewsItem[];
+  };
+  pricing: {
+    startBase: number;              // цена тарифа «Старт», ₽/мес
+    volumes: VolumePack[];          // пакеты заявок тарифа «Про»
+    freeFeatures: FreeFeature[];    // список «Бесплатный» (ok=есть/нет)
+    startFeatures: string[];        // список «Старт»
+    proFeatures: string[];          // список «Про»
   };
 };
 
@@ -27,6 +36,34 @@ export const DEFAULT_CONTENT: SiteContent = {
       { date: "3 июня 2026", tag: "feature", title: "Свободный редактор обложки", text: "Первый экран квиза стал полностью свободным: двигайте заголовок, описание и преимущества, задавайте размеры, цвета, шрифты и бордеры без кода." },
     ],
   },
+  pricing: {
+    startBase: 590,
+    volumes: [
+      { n: 100, p: 1290 }, { n: 300, p: 2790 }, { n: 500, p: 3990 },
+      { n: 1000, p: 5990 }, { n: 3000, p: 8490 }, { n: 5000, p: 11490 },
+    ],
+    freeFeatures: [
+      { ok: true, text: "Безлимит квизов и проектов" },
+      { ok: true, text: "Полный редактор и ИИ-генерация" },
+      { ok: true, text: "Вся аналитика: Метрика, свой код" },
+      { ok: true, text: "Встроенная CRM для заявок" },
+      { ok: false, text: "Бейдж «Сделано в Квалифай»" },
+    ],
+    startFeatures: [
+      "Всё из Бесплатного",
+      "Все интеграции: CRM, мессенджеры, вебхуки",
+      "Коллтрекинг на каждый шаг",
+      "Без бейджа Квалифай",
+      "Экспорт заявок в CSV",
+    ],
+    proFeatures: [
+      "Всё из Старта",
+      "Команда: приглашения в проект без лимита",
+      "Свой домен и загрузка видео",
+      "A/B-тесты и динамический контент",
+      "Приоритетная поддержка",
+    ],
+  },
 };
 
 const TAGS: NewsTag[] = ["feature", "integ", "platform"];
@@ -35,11 +72,27 @@ const g = globalThis as { _qvContent?: Cache };
 
 const s = (v: unknown, max = 4000) => (typeof v === "string" ? v.slice(0, max) : "");
 
+const num = (v: unknown, def: number, max = 10_000_000) => {
+  const x = Math.round(Number(v));
+  return Number.isFinite(x) && x >= 0 ? Math.min(max, x) : def;
+};
+const strList = (v: unknown, def: string[]) => (Array.isArray(v) ? v.map((x) => s(x, 200)).filter(Boolean).slice(0, 30) : def);
+
 function clean(raw: unknown): SiteContent {
-  const d = (raw && typeof raw === "object" ? raw : {}) as { news?: unknown };
+  const d = (raw && typeof raw === "object" ? raw : {}) as { news?: unknown; pricing?: unknown };
   const n = (d.news && typeof d.news === "object" ? d.news : {}) as { featured?: unknown; items?: unknown };
   const f = (n.featured && typeof n.featured === "object" ? n.featured : {}) as Record<string, unknown>;
   const items = Array.isArray(n.items) ? n.items : DEFAULT_CONTENT.news.items;
+
+  const pr = (d.pricing && typeof d.pricing === "object" ? d.pricing : {}) as Record<string, unknown>;
+  const dp = DEFAULT_CONTENT.pricing;
+  const volumes = Array.isArray(pr.volumes) && pr.volumes.length
+    ? pr.volumes.slice(0, 12).map((v) => { const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>; return { n: num(o.n, 100), p: num(o.p, 0) }; })
+    : dp.volumes;
+  const freeFeatures = Array.isArray(pr.freeFeatures) && pr.freeFeatures.length
+    ? pr.freeFeatures.slice(0, 30).map((v) => { const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>; return { ok: !!o.ok, text: s(o.text, 200) }; }).filter((x) => x.text)
+    : dp.freeFeatures;
+
   return {
     news: {
       featured: {
@@ -52,6 +105,13 @@ function clean(raw: unknown): SiteContent {
         const tag = TAGS.includes(o.tag as NewsTag) ? (o.tag as NewsTag) : "feature";
         return { date: s(o.date, 60), tag, title: s(o.title, 300), text: s(o.text) };
       }).filter((x) => x.title || x.text),
+    },
+    pricing: {
+      startBase: num(pr.startBase, dp.startBase),
+      volumes,
+      freeFeatures,
+      startFeatures: strList(pr.startFeatures, dp.startFeatures),
+      proFeatures: strList(pr.proFeatures, dp.proFeatures),
     },
   };
 }

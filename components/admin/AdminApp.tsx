@@ -354,6 +354,10 @@ function ContentSection() {
   const setItem = (i: number, patch: Partial<NewsItem>) => { const items = c.news.items.map((it, j) => (j === i ? { ...it, ...patch } : it)); setC({ ...c, news: { ...c.news, items } }); setSaved(false); };
   const addItem = () => { setC({ ...c, news: { ...c.news, items: [{ date: "", tag: "feature", title: "", text: "" }, ...c.news.items] } }); setSaved(false); };
   const delItem = (i: number) => { setC({ ...c, news: { ...c.news, items: c.news.items.filter((_, j) => j !== i) } }); setSaved(false); };
+  // Тарифы
+  const setP = (patch: Partial<SiteContent["pricing"]>) => { setC({ ...c, pricing: { ...c.pricing, ...patch } }); setSaved(false); };
+  const setVol = (i: number, patch: Partial<{ n: number; p: number }>) => setP({ volumes: c.pricing.volumes.map((v, j) => (j === i ? { ...v, ...patch } : v)) });
+  const setFree = (i: number, patch: Partial<{ ok: boolean; text: string }>) => setP({ freeFeatures: c.pricing.freeFeatures.map((v, j) => (j === i ? { ...v, ...patch } : v)) });
   const save = async () => { setBusy(true); try { const { content } = await api.adminSaveContent(c); setC(content); setSaved(true); } catch { /* ignore */ } finally { setBusy(false); } };
 
   const lbl: CSSProperties = { fontSize: 12, color: "#6b7280", marginBottom: 5, display: "block" };
@@ -362,7 +366,7 @@ function ContentSection() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-        <div><h1 style={h1}>Новости</h1><div style={sub}>Редактируется страница «Новости» на сайте</div></div>
+        <div><h1 style={h1}>Контент сайта</h1><div style={sub}>Новости и тарифы — правки видны на сайте сразу</div></div>
         <div onClick={busy ? undefined : save} style={{ cursor: "pointer", background: saved ? "#166534" : "#28559c", color: "#fff", fontSize: 13, fontWeight: 500, borderRadius: 9999, padding: "10px 22px", opacity: busy ? 0.6 : 1 }}>{busy ? "Сохраняем…" : saved ? "✓ Сохранено" : "Сохранить"}</div>
       </div>
 
@@ -394,6 +398,43 @@ function ContentSection() {
             <div><label style={lbl}>Текст</label><textarea value={it.text} onChange={(e) => setItem(i, { text: e.target.value })} rows={2} style={{ ...field, resize: "vertical", lineHeight: 1.5 }} /></div>
           </div>
         ))}
+
+        {/* Тарифы */}
+        <div style={{ height: 1, background: "#e5e7eb", margin: "10px 0 2px" }} />
+        <div style={{ fontSize: 15, fontWeight: 600 }}>Тарифы (страница «Тарифы»)</div>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div><label style={lbl}>Базовая цена «Старт», ₽/мес</label><input type="number" value={c.pricing.startBase} onChange={(e) => setP({ startBase: Number(e.target.value) || 0 })} style={{ ...field, maxWidth: 220 }} /></div>
+          <div>
+            <label style={lbl}>Пакеты заявок «Про» (кол-во → цена ₽/мес)</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {c.pricing.volumes.map((v, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="number" value={v.n} onChange={(e) => setVol(i, { n: Number(e.target.value) || 0 })} style={{ ...field, width: 110 }} />
+                  <span style={{ color: "#9ca3af" }}>→</span>
+                  <input type="number" value={v.p} onChange={(e) => setVol(i, { p: Number(e.target.value) || 0 })} style={{ ...field, width: 130 }} />
+                  <span style={{ fontSize: 12, color: "#9ca3af" }}>₽</span>
+                  <span onClick={() => setP({ volumes: c.pricing.volumes.filter((_, j) => j !== i) })} style={{ cursor: "pointer", color: "#b91c1c", fontSize: 12, marginLeft: "auto" }}>Удалить</span>
+                </div>
+              ))}
+              <div onClick={() => setP({ volumes: [...c.pricing.volumes, { n: 0, p: 0 }] })} style={{ cursor: "pointer", fontSize: 12.5, color: "#28559c" }}>+ Добавить пакет</div>
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Список «Бесплатный» (галочка = включено)</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {c.pricing.freeFeatures.map((ff, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="checkbox" checked={ff.ok} onChange={(e) => setFree(i, { ok: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#28559c", flexShrink: 0 }} />
+                  <input value={ff.text} onChange={(e) => setFree(i, { text: e.target.value })} style={{ ...field, flex: 1 }} />
+                  <span onClick={() => setP({ freeFeatures: c.pricing.freeFeatures.filter((_, j) => j !== i) })} style={{ cursor: "pointer", color: "#b91c1c", fontSize: 13 }}>✕</span>
+                </div>
+              ))}
+              <div onClick={() => setP({ freeFeatures: [...c.pricing.freeFeatures, { ok: true, text: "" }] })} style={{ cursor: "pointer", fontSize: 12.5, color: "#28559c" }}>+ Добавить пункт</div>
+            </div>
+          </div>
+          <div><label style={lbl}>Список «Старт» (по пункту на строку)</label><textarea value={c.pricing.startFeatures.join("\n")} onChange={(e) => setP({ startFeatures: e.target.value.split("\n") })} rows={5} style={{ ...field, resize: "vertical", lineHeight: 1.5 }} /></div>
+          <div><label style={lbl}>Список «Про» (по пункту на строку)</label><textarea value={c.pricing.proFeatures.join("\n")} onChange={(e) => setP({ proFeatures: e.target.value.split("\n") })} rows={5} style={{ ...field, resize: "vertical", lineHeight: 1.5 }} /></div>
+        </div>
       </div>
     </div>
   );

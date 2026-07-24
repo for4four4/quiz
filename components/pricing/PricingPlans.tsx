@@ -3,48 +3,36 @@
 import Link from "next/link";
 import { useState } from "react";
 import { routes } from "@/lib/nav";
+import type { SiteContent } from "@/lib/client/api";
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 const disc = (p: number) => Math.round((p * 0.8) / 10) * 10;
 
-const volumes = [
-  { n: 100, p: 1290 },
-  { n: 300, p: 2790 },
-  { n: 500, p: 3990 },
-  { n: 1000, p: 5990 },
-  { n: 3000, p: 8490 },
-  { n: 5000, p: 11490 },
-];
-const START_BASE = 590;
+const DEFAULT_PRICING: SiteContent["pricing"] = {
+  startBase: 590,
+  volumes: [
+    { n: 100, p: 1290 }, { n: 300, p: 2790 }, { n: 500, p: 3990 },
+    { n: 1000, p: 5990 }, { n: 3000, p: 8490 }, { n: 5000, p: 11490 },
+  ],
+  freeFeatures: [
+    { ok: true, text: "Безлимит квизов и проектов" },
+    { ok: true, text: "Полный редактор и ИИ-генерация" },
+    { ok: true, text: "Вся аналитика: Метрика, свой код" },
+    { ok: true, text: "Встроенная CRM для заявок" },
+    { ok: false, text: "Бейдж «Сделано в Квалифай»" },
+  ],
+  startFeatures: ["Всё из Бесплатного", "Все интеграции: CRM, мессенджеры, вебхуки", "Коллтрекинг на каждый шаг", "Без бейджа Квалифай", "Экспорт заявок в CSV"],
+  proFeatures: ["Всё из Старта", "Команда: приглашения в проект без лимита", "Свой домен и загрузка видео", "A/B-тесты и динамический контент", "Приоритетная поддержка"],
+};
 
-const freeFeatures: [boolean, string][] = [
-  [true, "Безлимит квизов и проектов"],
-  [true, "Полный редактор и ИИ-генерация"],
-  [true, "Вся аналитика: Метрика, свой код"],
-  [true, "Встроенная CRM для заявок"],
-  [false, "Бейдж «Сделано в Квалифай»"],
-];
-const startFeatures = [
-  "Всё из Бесплатного",
-  "Все интеграции: CRM, мессенджеры, вебхуки",
-  "Коллтрекинг на каждый шаг",
-  "Без бейджа Квалифай",
-  "Экспорт заявок в CSV",
-];
-const proFeatures = [
-  "Всё из Старта",
-  "Команда: приглашения в проект без лимита",
-  "Свой домен и загрузка видео",
-  "A/B-тесты и динамический контент",
-  "Приоритетная поддержка",
-];
-
-export function PricingPlans() {
+export function PricingPlans({ pricing = DEFAULT_PRICING }: { pricing?: SiteContent["pricing"] }) {
   const [yearly, setYearly] = useState(false);
   const [vol, setVol] = useState(0);
 
-  const startPrice = fmt(yearly ? disc(START_BASE) : START_BASE);
-  const proPrice = fmt(yearly ? disc(volumes[vol].p) : volumes[vol].p);
+  const { startBase, volumes, freeFeatures, startFeatures, proFeatures } = pricing;
+  const safeVol = Math.min(vol, volumes.length - 1);
+  const startPrice = fmt(yearly ? disc(startBase) : startBase);
+  const proPrice = fmt(yearly ? disc(volumes[safeVol].p) : volumes[safeVol].p);
 
   return (
     <>
@@ -141,9 +129,9 @@ export function PricingPlans() {
             <Price>0 ₽</Price>
             <Sub>10 заявок в месяц · навсегда</Sub>
             <Features>
-              {freeFeatures.map(([ok, t]) => (
-                <Feature key={t} ok={ok}>
-                  {t}
+              {freeFeatures.map((ff) => (
+                <Feature key={ff.text} ok={ff.ok}>
+                  {ff.text}
                 </Feature>
               ))}
             </Features>

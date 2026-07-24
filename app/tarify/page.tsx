@@ -5,6 +5,9 @@ import { Container } from "@/components/site/Container";
 import { PricingPlans } from "@/components/pricing/PricingPlans";
 import { Faq } from "@/components/pricing/Faq";
 import { routes } from "@/lib/nav";
+import { getSiteContent } from "@/lib/server/siteContent";
+
+export const runtime = "nodejs";
 
 export const metadata: Metadata = {
   title: "Тарифы",
@@ -75,7 +78,8 @@ const faq: [string, string][] = [
   ],
 ];
 
-export default function TarifyPage() {
+export default async function TarifyPage() {
+  const { pricing } = await getSiteContent();
   return (
     <div style={{ background: "#EFEFEF", color: "#111827", minHeight: "100vh" }}>
       <Nav variant="inner" active={routes.tarify} />
@@ -106,7 +110,7 @@ export default function TarifyPage() {
         </p>
       </div>
 
-      <PricingPlans />
+      <PricingPlans pricing={pricing} />
 
       {/* Comparison */}
       <div style={{ background: "#ffffff", padding: "96px 0", marginTop: 64 }} data-screen-label="Сравнение тарифов">

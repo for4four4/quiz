@@ -81,8 +81,17 @@ export type SiteSettings = {
 
 export type NewsTag = "feature" | "integ" | "platform";
 export type NewsItem = { date: string; tag: NewsTag; title: string; text: string };
+export type VolumePack = { n: number; p: number };
+export type FreeFeature = { ok: boolean; text: string };
 export type SiteContent = {
   news: { featured: { date: string; title: string; text: string }; items: NewsItem[] };
+  pricing: {
+    startBase: number;
+    volumes: VolumePack[];
+    freeFeatures: FreeFeature[];
+    startFeatures: string[];
+    proFeatures: string[];
+  };
 };
 
 export type PerQuizStat = { open: number; start: number; contact: number; lead: number; steps: Record<string, number> };
