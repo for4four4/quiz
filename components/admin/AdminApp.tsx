@@ -3,9 +3,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { routes } from "@/lib/nav";
-import { api, type AdminUser, type SiteSettings } from "@/lib/client/api";
+import { api, type AdminUser, type SiteSettings, type SiteContent, type NewsItem, type NewsTag } from "@/lib/client/api";
 
-type Tab = "clients" | "settings" | "plans" | "support";
+type Tab = "clients" | "settings" | "content" | "plans" | "support";
 
 const PLAN_NAMES: Record<string, string> = { free: "Free", start: "Старт", pro: "Про", biz: "Бизнес" };
 
@@ -31,6 +31,7 @@ function Icon({ paths }: { paths: string[] }) {
 const navDef: { id: Tab; label: string; paths: string[]; badge?: string }[] = [
   { id: "clients", label: "Пользователи", paths: ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"] },
   { id: "settings", label: "Настройки сайта", paths: ["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"] },
+  { id: "content", label: "Контент (новости)", paths: ["M4 19.5A2.5 2.5 0 0 1 6.5 17H20", "M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"] },
   { id: "plans", label: "Тарифы", paths: ["M12 1v22", "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"] },
   { id: "support", label: "Поддержка", paths: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"] },
 ];
@@ -164,6 +165,8 @@ export function AdminApp() {
         )}
 
         {tab === "settings" && <SettingsSection />}
+
+        {tab === "content" && <ContentSection />}
 
         {tab === "plans" && (
           <div>
@@ -331,6 +334,66 @@ function SettingsSection() {
           <div><label style={lbl}>Яндекс.Вебмастер (мета-тег)</label><input value={s.yandexVerify || ""} onChange={(e) => upd("yandexVerify", e.target.value)} placeholder="содержимое content=… из yandex-verification" style={field} /><div style={hint}>Вставьте значение content мета-тега yandex-verification.</div></div>
           <div><label style={lbl}>Google Search Console (мета-тег)</label><input value={s.googleVerify || ""} onChange={(e) => upd("googleVerify", e.target.value)} placeholder="содержимое content=… из google-site-verification" style={field} /><div style={hint}>Вставьте значение content мета-тега google-site-verification.</div></div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Контент сайта: новости ─────────────────────────────── */
+const NEWS_TAGS: [NewsTag, string][] = [["feature", "Функция"], ["integ", "Интеграция"], ["platform", "Платформа"]];
+
+function ContentSection() {
+  const [c, setC] = useState<SiteContent | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.adminContent().then(({ content }) => setC(content)).catch(() => {}); }, []);
+
+  if (!c) return <div style={{ color: "#9ca3af", fontSize: 13 }}>Загрузка…</div>;
+
+  const setFeatured = (k: "date" | "title" | "text", v: string) => { setC({ ...c, news: { ...c.news, featured: { ...c.news.featured, [k]: v } } }); setSaved(false); };
+  const setItem = (i: number, patch: Partial<NewsItem>) => { const items = c.news.items.map((it, j) => (j === i ? { ...it, ...patch } : it)); setC({ ...c, news: { ...c.news, items } }); setSaved(false); };
+  const addItem = () => { setC({ ...c, news: { ...c.news, items: [{ date: "", tag: "feature", title: "", text: "" }, ...c.news.items] } }); setSaved(false); };
+  const delItem = (i: number) => { setC({ ...c, news: { ...c.news, items: c.news.items.filter((_, j) => j !== i) } }); setSaved(false); };
+  const save = async () => { setBusy(true); try { const { content } = await api.adminSaveContent(c); setC(content); setSaved(true); } catch { /* ignore */ } finally { setBusy(false); } };
+
+  const lbl: CSSProperties = { fontSize: 12, color: "#6b7280", marginBottom: 5, display: "block" };
+  const field: CSSProperties = { width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", fontSize: 13.5, fontFamily: "inherit", outlineColor: "#28559c" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+        <div><h1 style={h1}>Новости</h1><div style={sub}>Редактируется страница «Новости» на сайте</div></div>
+        <div onClick={busy ? undefined : save} style={{ cursor: "pointer", background: saved ? "#166534" : "#28559c", color: "#fff", fontSize: 13, fontWeight: 500, borderRadius: 9999, padding: "10px 22px", opacity: busy ? 0.6 : 1 }}>{busy ? "Сохраняем…" : saved ? "✓ Сохранено" : "Сохранить"}</div>
+      </div>
+
+      <div style={{ maxWidth: 820, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Главная новость (баннер)</div>
+          <div><label style={lbl}>Дата</label><input value={c.news.featured.date} onChange={(e) => setFeatured("date", e.target.value)} style={{ ...field, maxWidth: 220 }} /></div>
+          <div><label style={lbl}>Заголовок</label><input value={c.news.featured.title} onChange={(e) => setFeatured("title", e.target.value)} style={field} /></div>
+          <div><label style={lbl}>Текст</label><textarea value={c.news.featured.text} onChange={(e) => setFeatured("text", e.target.value)} rows={3} style={{ ...field, resize: "vertical", lineHeight: 1.5 }} /></div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Лента новостей ({c.news.items.length})</div>
+          <div onClick={addItem} style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 500, color: "#28559c", border: "1px solid rgba(40,85,156,0.4)", borderRadius: 9999, padding: "7px 16px" }}>+ Добавить новость</div>
+        </div>
+
+        {c.news.items.map((it, i) => (
+          <div key={i} style={{ background: "#fff", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 160px" }}><label style={lbl}>Дата</label><input value={it.date} onChange={(e) => setItem(i, { date: e.target.value })} style={field} /></div>
+              <div style={{ flex: "1 1 160px" }}><label style={lbl}>Метка</label>
+                <select value={it.tag} onChange={(e) => setItem(i, { tag: e.target.value as NewsTag })} style={{ ...field, cursor: "pointer" }}>
+                  {NEWS_TAGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              <div onClick={() => delItem(i)} style={{ alignSelf: "flex-end", cursor: "pointer", fontSize: 12.5, color: "#b91c1c", border: "1px solid #f3d4d3", borderRadius: 9999, padding: "9px 14px" }}>Удалить</div>
+            </div>
+            <div><label style={lbl}>Заголовок</label><input value={it.title} onChange={(e) => setItem(i, { title: e.target.value })} style={field} /></div>
+            <div><label style={lbl}>Текст</label><textarea value={it.text} onChange={(e) => setItem(i, { text: e.target.value })} rows={2} style={{ ...field, resize: "vertical", lineHeight: 1.5 }} /></div>
+          </div>
+        ))}
       </div>
     </div>
   );

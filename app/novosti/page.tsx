@@ -3,6 +3,9 @@ import Link from "next/link";
 import { Nav } from "@/components/site/Nav";
 import { Footer } from "@/components/site/Footer";
 import { routes } from "@/lib/nav";
+import { getSiteContent, type NewsTag } from "@/lib/server/siteContent";
+
+export const runtime = "nodejs";
 
 export const metadata: Metadata = {
   title: "Новости",
@@ -11,21 +14,16 @@ export const metadata: Metadata = {
   alternates: { canonical: "/novosti" },
 };
 
-const tags = {
+const tags: Record<NewsTag, { tag: string; tagColor: string; tagBg: string }> = {
   feature: { tag: "Функция", tagColor: "#28559c", tagBg: "rgba(40,85,156,0.08)" },
   integ: { tag: "Интеграция", tagColor: "#166534", tagBg: "rgba(22,101,52,0.08)" },
   platform: { tag: "Платформа", tagColor: "#111827", tagBg: "rgba(17,24,39,0.06)" },
-} as const;
+};
 
-const news = [
-  { date: "10 июля 2026", ...tags.feature, title: "ИИ-генерация квизов вышла из беты", text: "Опишите бизнес одной фразой — ИИ соберёт обложку, вопросы с ветвлением, калькулятор стоимости и форму контактов. Каждый сгенерированный блок редактируется как обычный." },
-  { date: "2 июля 2026", ...tags.integ, title: "Интеграция с MAX", text: "Заявки из квизов теперь приходят в MAX: подключите бота в разделе «Интеграции» — уведомления о новых лидах будут падать в чат мгновенно." },
-  { date: "24 июня 2026", ...tags.feature, title: "Перенос неиспользованных заявок", text: "Остаток лимита заявок больше не сгорает в конце месяца — он автоматически переносится на следующий. Правило работает на всех платных тарифах." },
-  { date: "15 июня 2026", ...tags.platform, title: "Встроенная CRM в кабинете", text: "Лиды по каждому квизу, статусы, ответы и источники — теперь в личном кабинете. Внешнюю CRM можно подключить позже, ничего не потеряется." },
-  { date: "3 июня 2026", ...tags.feature, title: "Свободный редактор обложки", text: "Первый экран квиза стал полностью свободным: двигайте заголовок, описание и преимущества, задавайте размеры, цвета, шрифты и бордеры без кода." },
-];
-
-export default function NovostiPage() {
+export default async function NovostiPage() {
+  const content = await getSiteContent();
+  const featured = content.news.featured;
+  const news = content.news.items.map((n) => ({ ...n, ...tags[n.tag] }));
   return (
     <div style={{ background: "#E8EDF6", color: "#111827", minHeight: "100vh" }}>
       <Nav variant="inner" active={routes.novosti} />
@@ -57,14 +55,13 @@ export default function NovostiPage() {
           <div style={{ position: "absolute", width: "30vw", height: "30vw", right: "-8vw", top: "-12vw", borderRadius: "50%", background: "radial-gradient(circle,rgba(255,255,255,0.15),rgba(255,255,255,0) 65%)", pointerEvents: "none" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
             <span style={{ fontSize: 11.5, fontWeight: 600, background: "#ffffff", color: "#28559c", borderRadius: 9999, padding: "4px 12px" }}>Главное</span>
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>15 июля 2026</span>
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{featured.date}</span>
           </div>
           <div style={{ fontSize: "clamp(1.4rem,2.6vw,2rem)", fontWeight: 500, letterSpacing: "-0.02em", lineHeight: 1.2, maxWidth: 640 }}>
-            Запускаем Квалифай: открыт приём первых клиентов
+            {featured.title}
           </div>
-          <p style={{ margin: "16px 0 0", fontSize: 15, lineHeight: 1.65, color: "rgba(255,255,255,0.75)", maxWidth: 640 }}>
-            Платформа вышла из закрытого тестирования. Первый квиз — бесплатно на любом тарифе: соберите его руками или доверьте ИИ,
-            встройте на сайт и получите первые заявки. Подключаем клиентов в порядке очереди — регистрация уже открыта.
+          <p style={{ margin: "16px 0 0", fontSize: 15, lineHeight: 1.65, color: "rgba(255,255,255,0.75)", maxWidth: 640, whiteSpace: "pre-wrap" }}>
+            {featured.text}
           </p>
           <Link
             href={routes.editor}
@@ -89,9 +86,9 @@ export default function NovostiPage() {
 
       {/* List */}
       <div style={{ maxWidth: 1100, margin: "0 auto", boxSizing: "border-box", padding: "16px clamp(20px,5vw,48px) 96px", display: "flex", flexDirection: "column", gap: 16 }}>
-        {news.map((n) => (
+        {news.map((n, ni) => (
           <div
-            key={n.title}
+            key={ni}
             className="qv-news"
             style={{
               background: "#ffffff",

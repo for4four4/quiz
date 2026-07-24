@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS site_settings (
 );
 INSERT INTO site_settings (id, data) VALUES (1, '{}') ON CONFLICT (id) DO NOTHING;
 
+-- Редактируемый контент сайта (singleton): новости, тарифы, тексты
+CREATE TABLE IF NOT EXISTS site_content (
+  id   INTEGER PRIMARY KEY DEFAULT 1,
+  data JSONB NOT NULL DEFAULT '{}',
+  CONSTRAINT site_content_single CHECK (id = 1)
+);
+INSERT INTO site_content (id, data) VALUES (1, '{}') ON CONFLICT (id) DO NOTHING;
+
 -- События посетителей для воронки и аналитики шагов
 CREATE TABLE IF NOT EXISTS events (
   id          BIGSERIAL PRIMARY KEY,

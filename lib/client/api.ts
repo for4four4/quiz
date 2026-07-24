@@ -79,6 +79,12 @@ export type SiteSettings = {
   googleVerify?: string;
 };
 
+export type NewsTag = "feature" | "integ" | "platform";
+export type NewsItem = { date: string; tag: NewsTag; title: string; text: string };
+export type SiteContent = {
+  news: { featured: { date: string; title: string; text: string }; items: NewsItem[] };
+};
+
 export type PerQuizStat = { open: number; start: number; contact: number; lead: number; steps: Record<string, number> };
 export type Stats = {
   days: number;
@@ -159,6 +165,9 @@ export const api = {
   adminSettings: () => fetch("/api/admin/settings").then((r) => j<{ settings: SiteSettings }>(r)),
   adminSaveSettings: (settings: SiteSettings) =>
     fetch("/api/admin/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }).then((r) => j<{ settings: SiteSettings }>(r)),
+  adminContent: () => fetch("/api/admin/content").then((r) => j<{ content: SiteContent }>(r)),
+  adminSaveContent: (content: SiteContent) =>
+    fetch("/api/admin/content", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(content) }).then((r) => j<{ content: SiteContent }>(r)),
 
   generate: (body: {
     business: string;
