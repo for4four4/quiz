@@ -49,6 +49,8 @@ export function EditorApp() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [mPane, setMPane] = useState<"left" | "canvas" | "right">("canvas"); // мобильные шторки
+  const isMobile = useIsMobile(900);
 
   const idRef = useRef<string | null>(null);
   const selStepRef = useRef(selStep);
@@ -351,10 +353,18 @@ export function EditorApp() {
 
   const cardBg = step.bg.type === "image" && step.bg.value ? { backgroundImage: `url(${step.bg.value})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: step.bg.value };
 
+  // На мобильном левая/правая панели — выезжающие шторки, переключаются нижним таббаром.
+  const leftPaneStyle: CSSProperties = isMobile
+    ? { position: "absolute", top: 0, left: 0, bottom: 56, width: "min(280px,86vw)", zIndex: 40, transform: mPane === "left" ? "none" : "translateX(-105%)", transition: "transform .25s ease", boxShadow: mPane === "left" ? "8px 0 32px rgba(15,31,60,.18)" : "none", background: "#fff", overflowY: "auto", borderRight: "1px solid #e9e9e9", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 12 }
+    : { width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 12 };
+  const rightPaneStyle: CSSProperties = isMobile
+    ? { position: "absolute", top: 0, right: 0, bottom: 56, width: "min(300px,90vw)", zIndex: 40, transform: mPane === "right" ? "none" : "translateX(105%)", transition: "transform .25s ease", boxShadow: mPane === "right" ? "-8px 0 32px rgba(15,31,60,.18)" : "none", background: "#fff", overflowY: "auto", borderLeft: "1px solid #e9e9e9", padding: "18px 16px", boxSizing: "border-box" }
+    : { width: 288, flexShrink: 0, background: "#fff", borderLeft: "1px solid #e9e9e9", overflowY: "auto", padding: "18px 16px", boxSizing: "border-box" };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#EFEFEF", color: "#111827", overflow: "hidden", fontFamily: FONTS.system }}>
       {/* Topbar */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #e9e9e9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "10px 16px", flexShrink: 0 }}>
+      <div style={{ background: "#fff", borderBottom: "1px solid #e9e9e9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? 8 : 16, rowGap: 8, flexWrap: "wrap", padding: isMobile ? "8px 12px" : "10px 16px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
           <Link href={routes.cabinet} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500, color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 9999, padding: "7px 14px", flexShrink: 0 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>Кабинет
@@ -377,11 +387,11 @@ export function EditorApp() {
       {editMode === "leads" ? (
         <LeadsRoutingEditor rules={doc.integrations || {}} onChange={onIntegrations} />
       ) : editMode === "button" ? (
-        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} onThanks={onThanks} onDiscount={onDiscount} onMisc={onMisc} />
+        <ButtonShowEditor settings={withSettings(doc)} onButton={onButton} onDisplay={onDisplay} onAnim={onAnim} onThanks={onThanks} onDiscount={onDiscount} onMisc={onMisc} isMobile={isMobile} />
       ) : (
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
         {/* Left: steps + palette */}
-        <div style={{ width: 236, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 12px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={leftPaneStyle}>
           <Tabs value={leftTab} onChange={(v) => setLeftTab(v as "steps" | "blocks")} items={[["steps", "Шаги"], ["blocks", "Блоки"]]} />
           <div style={{ display: leftTab === "steps" ? "block" : "none" }}>
             <div data-dnd="steps" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -392,7 +402,7 @@ export function EditorApp() {
                 const showDel = canDel && (hoverStep === s.id || armedDel === s.id);
                 const armed = armedDel === s.id;
                 return (
-                  <div key={s.id} data-id={s.id} onClick={() => { setSelStep(i); setSelBlock(null); }}
+                  <div key={s.id} data-id={s.id} onClick={() => { setSelStep(i); setSelBlock(null); if (isMobile) setMPane("canvas"); }}
                     onMouseEnter={() => { setHoverStep(s.id); if (armedDel && armedDel !== s.id) setArmedDel(null); }}
                     onMouseLeave={() => setHoverStep((h) => (h === s.id ? null : h))}
                     style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 12, cursor: "pointer", background: active ? "rgba(40,85,156,0.09)" : "#fff", border: "1px solid " + (active ? "rgba(40,85,156,0.25)" : "transparent"), opacity: dragging ? 0.5 : 1, boxShadow: dragging ? "0 8px 24px rgba(17,24,39,0.18)" : "none", transition: "box-shadow .15s ease" }}>
@@ -417,7 +427,7 @@ export function EditorApp() {
             <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 8, lineHeight: 1.5 }}>Клик — добавить блок на текущий шаг «{step.kind === "cover" ? "Обложка" : step.kind === "contact" ? "Контакты" : `Шаг ${selStep}`}»</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               {PALETTE.map(([type, icon, label]) => (
-                <div key={type} onClick={() => addBlock(type)} className="qv-tap" style={{ border: "1px solid #ececec", borderRadius: 12, padding: "10px 6px", fontSize: 11.5, fontWeight: 500, textAlign: "center", cursor: "pointer", color: "#374151", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <div key={type} onClick={() => { addBlock(type); if (isMobile) setMPane("canvas"); }} className="qv-tap" style={{ border: "1px solid #ececec", borderRadius: 12, padding: "10px 6px", fontSize: 11.5, fontWeight: 500, textAlign: "center", cursor: "pointer", color: "#374151", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <span style={{ color: "#28559c", fontFamily: "monospace" }}>{icon}</span>{label}
                 </div>
               ))}
@@ -426,7 +436,7 @@ export function EditorApp() {
         </div>
 
         {/* Center: canvas */}
-        <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "36px 24px" }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: isMobile ? "18px 12px 84px" : "36px 24px" }}>
           {(() => {
             const card = withCard(doc);
             const free = step.layout === "free";
@@ -439,7 +449,7 @@ export function EditorApp() {
             const renderBlock = (b: Block, idx: number) => (
               <CanvasBlock key={b.id} block={b} accent={doc.theme.accent} selected={selBlock === b.id} dragging={dragId === b.id}
                 free={free} freeIndex={idx} contentW={contentW}
-                onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); }}
+                onSelect={(e) => { e.stopPropagation(); setSelBlock(b.id); if (isMobile) setMPane("right"); }}
                 onText={(v) => patchBlock(b.id, (bl) => ({ ...bl, text: v }))}
                 onOption={(oi, v) => patchBlock(b.id, (bl) => ({ ...bl, options: (bl.options || []).map((o, j) => (j === oi ? v : o)) }))}
                 onGrip={free ? beginMove(b.id) : beginDrag("block", b.id)} onResize={beginResize(b.id)} />
@@ -479,7 +489,7 @@ export function EditorApp() {
         </div>
 
         {/* Right: inspector */}
-        <div style={{ width: 288, flexShrink: 0, background: "#fff", borderLeft: "1px solid #e9e9e9", overflowY: "auto", padding: "18px 16px", boxSizing: "border-box" }}>
+        <div style={rightPaneStyle}>
           {block ? (
             <BlockInspector block={block} setStyle={setStyle} setField={setBlockField}
               branchSteps={doc.steps.map((s, i) => ({ id: s.id, label: s.kind === "cover" ? "Обложка" : s.kind === "contact" ? "Контакты" : `Шаг ${i}` })).filter((x) => x.id !== step.id)}
@@ -492,10 +502,38 @@ export function EditorApp() {
               onDeleteStep={() => deleteStep(selStep)} canDelete={doc.steps.length > 1 && step.kind === "question"} />
           )}
         </div>
+
+        {/* Мобильный скрим при открытой шторке */}
+        {isMobile && mPane !== "canvas" && (
+          <div onClick={() => setMPane("canvas")} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 56, zIndex: 35, background: "rgba(15,23,42,0.35)" }} />
+        )}
+        {/* Мобильный нижний таббар: переключение панелей */}
+        {isMobile && (
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 56, zIndex: 45, background: "#fff", borderTop: "1px solid #e9e9e9", display: "flex" }}>
+            {([["left", "Шаги / Блоки", "☰"], ["canvas", "Холст", "▦"], ["right", "Свойства", "⚙"]] as const).map(([p, label, icon]) => (
+              <div key={p} onClick={() => setMPane(p)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer", fontSize: 10.5, fontWeight: 600, color: mPane === p ? "#28559c" : "#9ca3af", background: mPane === p ? "rgba(40,85,156,0.06)" : "transparent" }}>
+                <span style={{ fontSize: 15 }}>{icon}</span>{label}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       )}
     </div>
   );
+}
+
+/* ── mobile detection ───────────────────────────────────── */
+function useIsMobile(bp = 900): boolean {
+  const [m, setM] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${bp}px)`);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [bp]);
+  return m;
 }
 
 /* ── canvas block ───────────────────────────────────────── */

@@ -33,7 +33,7 @@ function BgSlider({ images, sec, slide, radius }: { images: string[]; sec: numbe
   );
 }
 
-export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThanks, onDiscount, onMisc }: {
+export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThanks, onDiscount, onMisc, isMobile = false }: {
   settings: QuizSettings;
   onButton: (p: Partial<QuizSettings["button"]>) => void;
   onDisplay: (p: Partial<QuizSettings["display"]>) => void;
@@ -41,6 +41,7 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThan
   onThanks: (p: Partial<NonNullable<QuizSettings["thanks"]>>) => void;
   onDiscount: (p: Partial<NonNullable<QuizSettings["discount"]>>) => void;
   onMisc: (p: Partial<Pick<QuizSettings, "hideBadge">>) => void;
+  isMobile?: boolean;
 }) {
   const b = settings.button;
   const d = settings.display;
@@ -70,9 +71,9 @@ export function ButtonShowEditor({ settings, onButton, onDisplay, onAnim, onThan
   const slideKf = ANIM_KEYFRAME[settings.slideAnim];
 
   return (
-    <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flex: 1, minHeight: 0, overflowY: isMobile ? "auto" : "visible" }}>
       {/* Controls */}
-      <div style={{ width: 320, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9e9e9", overflowY: "auto", padding: "16px 16px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ width: isMobile ? "100%" : 320, flexShrink: 0, background: "#fff", borderRight: isMobile ? "none" : "1px solid #e9e9e9", borderBottom: isMobile ? "1px solid #e9e9e9" : "none", overflowY: isMobile ? "visible" : "auto", padding: "16px 16px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Кнопка и показ</div>
         <Tabs value={tab} onChange={(v) => setTab(v as PanelTab)} items={TABS} />
 
