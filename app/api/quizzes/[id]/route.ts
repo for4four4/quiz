@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ensureSchema, query } from "@/lib/server/db";
 import { requireSession } from "@/lib/server/auth";
+import { invalidateQuiz } from "@/lib/server/publicQuiz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       [id, s.uid, b.name ?? null, b.status ?? null, b.steps ? JSON.stringify(b.steps) : null, b.design ? JSON.stringify(b.design) : null]
     );
     if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+    await invalidateQuiz(row.slug, row.domain); // сброс кеша публичного квиза
     return NextResponse.json({ quiz: row });
   } catch (e) {
     if (e instanceof Response) return e;

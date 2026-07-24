@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { extname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { requireSession } from "@/lib/server/auth";
-import { env } from "@/lib/server/env";
+import { putUpload } from "@/lib/server/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,10 +22,9 @@ export async function POST(req: Request) {
     const ext = (extname(file.name || "") || ".png").toLowerCase();
     if (!ALLOWED.has(ext)) return NextResponse.json({ error: "Только изображения (png, jpg, webp, gif)" }, { status: 400 });
 
-    await mkdir(env.uploadDir, { recursive: true });
     const name = randomBytes(12).toString("hex") + ext;
-    await writeFile(join(env.uploadDir, name), Buffer.from(await file.arrayBuffer()));
-    return NextResponse.json({ url: `/api/uploads/${name}` });
+    const url = await putUpload(name, Buffer.from(await file.arrayBuffer()));
+    return NextResponse.json({ url });
   } catch (e) {
     if (e instanceof Response) return e;
     return NextResponse.json({ error: "Ошибка загрузки" }, { status: 500 });

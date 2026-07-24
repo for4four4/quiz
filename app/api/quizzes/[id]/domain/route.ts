@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ensureSchema, query } from "@/lib/server/db";
 import { requireSession } from "@/lib/server/auth";
+import { invalidateQuiz } from "@/lib/server/publicQuiz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       [id, s.uid, domain || null]
     );
     if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+    await invalidateQuiz(null, domain); // сброс кеша по домену
     return NextResponse.json({ domain: row.domain || "" });
   } catch (e) {
     if (e instanceof Response) return e;
